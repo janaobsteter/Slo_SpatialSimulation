@@ -1,0 +1,30 @@
+allBullsA = rbind(allBullsA, c(Off_Villages[[i]][[each]][bestYBull]@id, Off_Villages[[i]][[each]][bestYBull]@gv[1])   )
+NewVillageBulls = which(as.numeric(Sires@id) (%!in%  allBulls[,1]) )
+12*100*20
+100*20
+?dir.create
+rm(list = ls())
+load("/Volumes/marialse/SimulationStudyVersion2StdData/BurninData/Rep_2_Burnin/Data.RData")
+ls()
+str(PYT)
+PYT@id
+ls()
+PYT@geno
+PYT@geno[1:10,1:10]
+dim(PYT@geno)
+dim(PYT@geno[1,])
+length(PYT@geno[1,])
+PYT@geno
+PYT@geno[1]
+PYT@geno[1,]
+PYT@geno[1,1]
+dim(PYT@geno[1,1])
+PYT@geno[1,1]
+head(PYT@geno[1,1])
+head(PYT@geno[1,
+class(PYT@geno[1,1])
+length(PYT@geno[1,1])
+length(PYT@geno[1,1][[1]])
+class(PYT@geno[1,1][[1]])
+dim(PYT@geno[1,1][[1]])
+PYT@gv

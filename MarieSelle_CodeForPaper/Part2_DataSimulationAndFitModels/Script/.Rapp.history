@@ -1,0 +1,5 @@
+? createAndSetScenarioFolder
+load("/Users/marialse/Box Sync/Abel/SimulationStudyCattle/ResultsMai2019/Rep32_BreedingScenarioA_MarkersF/Results.RData")
+ls
+ls()
+CorEbv11
