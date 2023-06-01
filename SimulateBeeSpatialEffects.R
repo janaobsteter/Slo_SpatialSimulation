@@ -17,8 +17,8 @@ local.plot.field = function(field, mesh, xlim=c(0,10), ylim=c(0,10), ...){
 
 # Read in SLO locations
 hivesSLO <- read.csv("~/Documents/1Projects/SIMplyBee_devel/Spatial/Data/Locations_cebele_KIS_130123.csv")
-locSLO <- unique(hivesSLO[, c("X_COORDINATE", "Y_COORDINATE")])
-colnames(locSLO) <- c("Y_COORDINATE", "X_COORDINATE") #Change x and y! They are the other way around for some reason
+locSLO <- unique(hivesSLO[, c("X_COORDINATE", "Y_COORDINATE", "KMG_MID")])
+colnames(locSLO) <- c("Y_COORDINATE", "X_COORDINATE", "Beekeeper") #Change x and y! They are the other way around for some reason
 locSLO[(is.na(locSLO$Y_COORDINATE)),]
 locSLO <- locSLO[!is.na(locSLO$Y_COORDINATE),]
 sum(is.na(locSLO$X_COORDINATE)); sum(is.na(locSLO$Y_COORDINATE))
@@ -45,7 +45,7 @@ xminData <- min(df$X_COORDINATE)
 yminData <- min(df$Y_COORDINATE)
 df$X_COORDINATE <- df$X_COORDINATE - xminData
 df$Y_COORDINATE <- df$Y_COORDINATE - yminData
-write.csv(df[, c("X_COORDINATE", "Y_COORDINATE")], "~/Documents/1Projects/SIMplyBee_devel/Spatial/SLOLocations_standardised.csv", quote=F, row.names=F)
+write.csv(df[, c("X_COORDINATE", "Y_COORDINATE", "Beekeeper")], "~/Documents/1Projects/SIMplyBee_devel/Spatial/SLOLocations_standardised.csv", quote=F, row.names=F)
 
 #Plot by scatter plot
 plot(x = df$X_COORDINATE, y = df$Y_COORDINATE)
@@ -104,7 +104,7 @@ A = inla.spde.make.A(mesh=mesh2, loc=as.matrix(df))
 u = drop(A %*% u)
 table(u)
 
-quilt.plot(x=df[, 2],y=df[, 1], z=u, nx=100, ny=100, #What is nx and ny - number of grid boxes?
+quilt.plot(x=df$X_COORDINATE,y=df$Y_COORDINATE, z=u, nx=100, ny=100, #What is nx and ny - number of grid boxes?
            col = plasma(101), main="Field projected to data locations",
            zlim = range(u))
 

@@ -34,15 +34,36 @@ maintainPopulationSize <- function(age0 = NULL, age1 = NULL, popSize = NULL) {
   }
 }
 
-# Locations
-loc <- read.csv("SLOLocations_standardised.csv")
-nColoniesPerLocation = 1 #In reality, it's 15
+sampleBeekeepersLocation <- function(locDF, currentLocation = NULL, excludeCurrentLoc = FALSE, n = 1, replace = TRUE) {
+  beekeeper <- as.character(unique(locDF$Beekeeper[locDF$X_COORDINATE == currentLocation[1] & locDF$Y_COORDINATE == currentLocation[2]]))
+  beekeeperLoc <- locDF[(locDF$Beekeeper %in% beekeeper), ]
+  beekeeperLocList <- Map(c, beekeeperLoc$X_COORDINATE, beekeeperLoc$Y_COORDINATE)
+  if (excludeCurrentLoc) {
+    if (length(beekeeperLocList) > 1) {
+      beekeeperLocList <- beekeeperLocList[!beekeeperLocList %in% list(c(currentLocation))]
+    }
+  }
+  ret <- beekeeperLocList[sample(1:length(beekeeperLocList), size = n, replace = replace)]
+}
 
-# Sample 100 locations for testing from one region - so they are close together
-loc <- loc[loc$X_COORDINATE < 40000 & loc$Y_COORDINATE < 20000 ,]
+# Locations - x, y, and the beekeper
+locAll <- read.csv("SLOLocations_standardised.csv")
+nColoniesPerLocation <- 5 #In reality, it's 15
+locAll$Beekeeper <- as.factor(locAll$Beekeeper)
+ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point()
+
+# Sample locations for testing from one region - so they are close together - but have 15 colonies at each location
+loc <- locAll[locAll$X_COORDINATE < 20000 & locAll$Y_COORDINATE < 8000 ,]
 nrow(loc)
-locList <- Map(c, loc$X_COORDINATE, loc$Y_COORDINATE)
+locList <- rep(Map(c, loc$X_COORDINATE, loc$Y_COORDINATE), nColoniesPerLocation)
 ggplot(loc, aes(x = X_COORDINATE,y = Y_COORDINATE)) + geom_point()
+length(unique(loc$Beekeeper))
+
+# OR sample the colonies of 20 beekeepers
+# selBeekeeper <- sample(unique(locAll$Beekeeper), size = 50, replace = FALSE)
+# loc <- locAll[locAll$Beekeeper %in% selBeekeeper,]
+# nrow(loc)
+# ggplot(loc, aes(x = X_COORDINATE,y = Y_COORDINATE, colour = Beekeeper)) + geom_point()
 
 # Founder population parameters -------------------------------------------------------------------
 nColonies = nrow(loc) * nColoniesPerLocation              # Number of colonies in Slovenia, using a smaller number for now
@@ -97,7 +118,6 @@ data_rec <- function(datafile, colonies, year, population) {
   queens = mergePops(getQueen(colonies))
   datafile = rbind(datafile,
                    data.frame(colonies             = deparse(substitute(colonies)),
-                              population           = population,
                               year                 = year,
                               Id                   = queens@id,
                               MId                  = queens@mother,
@@ -224,8 +244,11 @@ for (Rep in 1:nRep) {
     start = Sys.time()
     tmp <- split(age1)
     age1 <- tmp$remnant
-    # Set the location of the splits - for now, have the same location
-    tmp$split <- setLocation(tmp$split, location = getLocation(age1))
+    # Set the location of the splits - if the beekeeper has another location, it samples another one
+    # If the beekeeper has only one location, it samples the same one
+    newSplitLoc <- sapply(getLocation(age1),
+                          FUN = function(x) sampleBeekeepersLocation(locDF = loc, currentLocation = x, n = 1, excludeCurrentLoc = TRUE))
+    tmp$split <- setLocation(tmp$split, location = newSplitLoc)
     # The queens of the splits are 0 years old
     age0p1 <- tmp$split
     end = Sys.time()
@@ -236,8 +259,11 @@ for (Rep in 1:nRep) {
       # Split all age2 colonies
       tmp <- split(age2)
       age2 <- tmp$remnant
-      # Set the location of the splits - for now, have the same location
-      tmp$split <- setLocation(tmp$split, location = getLocation(age2))
+      # Set the location of the splits - if the beekeeper has another location, it samples another one
+      # If the beekeeper has only one location, it samples the same one
+      newSplitLoc <- sapply(getLocation(age2),
+                            FUN = function(x) sampleBeekeepersLocation(locDF = loc, currentLocation = x, n = 1, excludeCurrentLoc = TRUE))
+      tmp$split <- setLocation(tmp$split, location = newSplitLoc)
       # The queens of the splits are 0 years old
       age0p1 <- c(age0p1, tmp$split)
     }
@@ -298,7 +324,8 @@ for (Rep in 1:nRep) {
       # Plot colonies in space
       locations = data.frame(x = sapply(getLocation(c(age0p1, age1)), FUN = function(x) x[[1]]),
                              y = sapply(getLocation(c(age0p1, age1)), FUN = function(x) x[[2]]),
-                             Colonies = as.factor(c(rep("Virgin", nColonies(age0p1)), rep("Drone", nColonies(age1)))))
+                             Colonies = as.factor(c(rep("Virgin", nColonies(age0p1)), rep("Drone", nColonies(age1)))),
+                             ColonyID = getId(c(age0p1, age1)))
       ggplot(data = locations, aes(x = x, y = y, colour = Colonies, size = Colonies)) +
         geom_point()
       age1start = Sys.time()
@@ -337,7 +364,7 @@ for (Rep in 1:nRep) {
     tmp <- swarm(tmp$pulled, sampleLocation = FALSE)
     # The queens of the remnant colonies are of age 0
     age0p2 <- tmp$remnant
-    age1 <- c(age1, tmp$swarm)
+    age1 <- c(age1, tmp$swarm) # Decide whether to loose the swarms? In that case, just remove this line
 
     if (year > 1) {
       # Swarm a percentage of age2 colonies
@@ -367,30 +394,31 @@ for (Rep in 1:nRep) {
       age0p2 <- c(age0p2, tmp)
     }
 
-    # Replace all the drones
-    print("Replace Drones, P2")
-
-    age1 <- replaceDrones(age1)
-    if (year > 1) {
-      age2 <- replaceDrones(age2)
-    }
-
     # Mate the colonies
     # Import p percentage of carnica colonies into mellifera DCA
     print("Mate colonies, P2")
 
     if (year == 1) {
-      age0p2 <- cross(age0p2,
-                droneColonies = age1,
-                nDrones = nFathersPoisson,
-                crossPlan = "create",
-                spatial = FALSE)
+      start = Sys.time()
+      age0p2 <- cross(x = age0p2,
+                      droneColonies = age1,
+                      nDrones = nFathersPoisson,
+                      crossPlan = "create",
+                      spatial = TRUE,
+                      radius = 5,
+                      checkCross = "warning")
+      end = Sys.time()
+      functionsTime <- rbind(functionsTime,
+                             c(Function = "Cross", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(age0p2), Time = end-start))
+
     } else {
       age0p2 <- cross(age0p2,
                       droneColonies = c(age1, age2),
                       nDrones = nFathersPoisson,
                       crossPlan = "create",
-                      spatial = FALSE)
+                      spatial = TRUE,
+                      radius = 5,
+                      checkCross = "warning")
     }
 
     # Collapse
