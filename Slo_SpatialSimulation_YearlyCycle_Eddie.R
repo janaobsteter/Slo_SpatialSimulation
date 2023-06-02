@@ -2,7 +2,6 @@
 setwd("~/Documents/1Projects/SIMplyBee_devel/Spatial/")
 # Load packages
 library(SIMplyBee)
-library(ggplot2)
 library(tictoc)
 library(R6)
 library(Matrix)
@@ -50,14 +49,14 @@ sampleBeekeepersLocation <- function(locDF, currentLocation = NULL, excludeCurre
 locAll <- read.csv("SLOLocations_standardised.csv")
 nColoniesPerLocation <- 5 #In reality, it's 15
 locAll$Beekeeper <- as.factor(locAll$Beekeeper)
-ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point()
+#ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point()
 
 # Sample locations for testing from one region - so they are close together - but have 5 colonies at each location
-loc <- locAll[locAll$X_COORDINATE < 20000 & locAll$Y_COORDINATE < 8000 ,]
+loc <- locAll[locAll$X_COORDINATE < 100000 ,]
 nrow(loc)
 locList <- rep(Map(c, loc$X_COORDINATE, loc$Y_COORDINATE), nColoniesPerLocation)
-ggplot(loc, aes(x = X_COORDINATE,y = Y_COORDINATE)) + geom_point()
-length(unique(loc$Beekeeper))
+# ggplot(loc, aes(x = X_COORDINATE,y = Y_COORDINATE)) + geom_point()
+# length(unique(loc$Beekeeper))
 
 # OR sample the colonies of 20 beekeepers
 # selBeekeeper <- sample(unique(locAll$Beekeeper), size = 50, replace = FALSE)
@@ -323,12 +322,12 @@ for (Rep in 1:nRep) {
     print("Mate split colonies, P1")
     if (year == 1) {
       # Plot colonies in space
-      locations = data.frame(x = sapply(getLocation(c(age0p1, age1)), FUN = function(x) x[[1]]),
-                             y = sapply(getLocation(c(age0p1, age1)), FUN = function(x) x[[2]]),
-                             Colonies = as.factor(c(rep("Virgin", nColonies(age0p1)), rep("Drone", nColonies(age1)))),
-                             ColonyID = getId(c(age0p1, age1)))
-      ggplot(data = locations, aes(x = x, y = y, colour = Colonies, size = Colonies)) +
-        geom_point()
+      # locations = data.frame(x = sapply(getLocation(c(age0p1, age1)), FUN = function(x) x[[1]]),
+      #                        y = sapply(getLocation(c(age0p1, age1)), FUN = function(x) x[[2]]),
+      #                        Colonies = as.factor(c(rep("Virgin", nColonies(age0p1)), rep("Drone", nColonies(age1)))),
+      #                        ColonyID = getId(c(age0p1, age1)))
+      # ggplot(data = locations, aes(x = x, y = y, colour = Colonies, size = Colonies)) +
+      #   geom_point()
       age1start = Sys.time()
       age0p1 <- cross(x = age0p1,
                       droneColonies = age1,
