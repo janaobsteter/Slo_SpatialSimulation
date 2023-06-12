@@ -14,6 +14,7 @@ print("Xlimit")
 print(xLim)
 print("Ylimit")
 print(yLim)
+
 # Define functions
 maintainPopulationSize <- function(age0 = NULL, age1 = NULL, popSize = NULL) {
   if ((nColonies(age0) + nColonies(age1)) > popSize) { # check if the sum of all colonies is greater than apiary size
@@ -38,7 +39,6 @@ maintainPopulationSize <- function(age0 = NULL, age1 = NULL, popSize = NULL) {
   }
 }
 
-
 sampleBeekeepersLocation <- function(locDF, currentLocation = NULL, excludeCurrentLoc = FALSE, n = 1, replace = TRUE) {
   beekeeper <- as.character(unique(locDF$Beekeeper[locDF$X_COORDINATE == currentLocation[1] & locDF$Y_COORDINATE == currentLocation[2]]))
   beekeeperLoc <- locDF[(locDF$Beekeeper %in% beekeeper), ]
@@ -61,6 +61,53 @@ setBeekeeper <- function(x, beekeeper = NULL) {
   }
   return(x)
 }
+
+
+getBeekeeper <- function(x) {
+  if (isColony(x)) {
+    ret <- as.character(x@misc$Beekeeper)
+  } else if (isMultiColony(x)) {
+    ret <- sapply(1:nColonies(x), FUN = function(z) getBeekeeper(x[[z]]))
+  }
+  names(ret) <- getId(x)
+  return(ret)
+}
+
+getBeekeepersColonies <- function(multicolony, beekeeper, size = NULL) {
+  if (is.null(size)) {
+    size <- nColonies(multicolony)
+  }
+  bk <- getBeekeeper(multicolony)
+  coloniesIDs <- names(bk)[bk == beekeeper]
+  return(multicolony[sample(coloniesIDs, size = size, replace = FALSE)])
+}
+
+getBeekeepersColoniesID <- function(multicolony, beekeeper, size = NULL) {
+  if (is.null(size)) {
+    size <- nColonies(multicolony)
+  }
+  bk <- getBeekeeper(multicolony)
+  coloniesIDs <- names(bk)[bk == beekeeper]
+  return(sample(coloniesIDs, size = size, replace = FALSE))
+}
+
+reQueenWithBeekeepersDonor <- function(virginMultiColony, donorMultiColony) {
+  # Sample a colony for each beekeeper to get virgin queens from
+  # First choose one colony for each beekeeper
+  bkDonorColony <- sapply(unique(getBeekeeper(virginMultiColony)),
+                          FUN = function(x) getBeekeepersColoniesID(donorMultiColony, beekeeper = x, size = 1))
+
+  splitVirginQueens <- list()
+  for (splitCol in getId(virginMultiColony)) {
+    donorColonyId <- bkDonorColony[getBeekeeper(virginMultiColony[[as.character(splitCol)]])]
+    splitVirginQueens <- c(splitVirginQueens, createVirginQueens(donorMultiColony[[donorColonyId]], nInd = 1))
+  }
+
+  # Requeen the splits --> queens are now 0 years old --> I think I need to requeen after each even when I still know "mother" colonies
+  virginMultiColony <- reQueen(virginMultiColony, queen = mergePops(splitVirginQueens))
+  return(virginMultiColony)
+}
+
 # Locations - x, y, and the beekeper
 locAll <- read.csv("SLOLocations_standardised.csv")
 print(paste0("Number of all locations is ", nrow(locAll)))
@@ -71,22 +118,10 @@ nColoniesPerLocation <- 5 #In reality, it's 15
 # Sample locations for testing from one region - so they are close together - but have 5 colonies at each location
 loc <- locAll[(locAll$X_COORDINATE < xLim) & (locAll$Y_COORDINATE < yLim), ]
 loc <- loc[!is.na(loc$Beekeeper),]
-print(paste0("locAll[locAll$X_COORDINATE <", xLim, " & locAll$Y_COORDINATE < ", yLim,  "]"))
 
 print(paste0("Number of locations is ", nrow(loc)))
-dir.create(paste0("NoLoc_", nrow(loc)))
-
-setwd(paste0("NoLoc_", nrow(loc)))
 locList <- rep(Map(c, loc$X_COORDINATE, loc$Y_COORDINATE), nColoniesPerLocation)
 colonyBeekeeper <- rep(loc$Beekeeper, nColoniesPerLocation)
-ggplot(loc, aes(x = X_COORDINATE,y = Y_COORDINATE)) + geom_point()
-# length(unique(loc$Beekeeper))
-
-# OR sample the colonies of 20 beekeepers
-# selBeekeeper <- sample(unique(locAll$Beekeeper), size = 50, replace = FALSE)
-# loc <- locAll[locAll$Beekeeper %in% selBeekeeper,]
-# nrow(loc)
-# ggplot(loc, aes(x = X_COORDINATE,y = Y_COORDINATE, colour = Beekeeper)) + geom_point()
 
 # Founder population parameters -------------------------------------------------------------------
 nColonies = nrow(loc) * nColoniesPerLocation              # Number of colonies in Slovenia, using a smaller number for now
@@ -107,6 +142,7 @@ noWorkers <- 10                # Number of workers in a full colony
 noDrones <- 1                  # Number of drones in a full colony (typically nWorkers * 0.2 (not in the example))
 noFathers <- nFathersPoisson   # Number of drones the queen mates with (could also be a function)
 noVirginQueens <- 1            # Number of created virgin queens
+matingRange <- 5000            # Range of mating in metres!
 
 # Period parameters -------------------------------------------------------------------
 # Period 1 (spring)
@@ -133,19 +169,28 @@ apiaryYearVar <- 1/3 * nonAVar
 spatialVar <- 1/3 * nonAVar
 residualVar <- 1/3 * nonAVar
 
+
+# Create a directory
+#dir.create(paste0("NoLoc_", nrow(loc)))
+#setwd(paste0("NoLoc_", nrow(loc)))
+
 # Create data frames for recording the number of age0 and age1 colonies, csd variability and for recording cpu time
 loopTime <- data.frame(Rep = NA, tic = NA, toc = NA, msg = NA, time = NA)
 functionsTime <- data.frame(Function = NA, Rep = NA, Year = NA, Period = NA, nColonies = NA, Time = NA)
+write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
 # Prepare recording function
 data_rec <- function(datafile, colonies, year) {
   queens = mergePops(getQueen(colonies))
+  location = getLocation(colonies, collapse = TRUE)
   datafile = rbind(datafile,
                    data.frame(colonies             = deparse(substitute(colonies)),
                               year                 = year,
                               Id                   = queens@id,
                               MId                  = queens@mother,
                               FId                  = queens@father,
+                              locationX            = location[,1],
+                              locationY            = location[,2],
                               nFathers             = nFathers(queens),
                               nDPQ                 = sapply(getFathers(queens), function(x) length(unique(x@mother))),
                               nCsdAlColony         = sapply(colonies@colonies, function(x) nCsdAlleles(x, collapse = TRUE)),
@@ -153,7 +198,6 @@ data_rec <- function(datafile, colonies, year) {
                               pHomBrood            = calcQueensPHomBrood(queens),
                               gvQueens_QueenTrait  = sapply(getGv(colonies, caste = "queen"), function(x) x[1,1])
                    ))}
-
 
 # Start of the rep-loop ---------------------------------------------------------------------
 for (Rep in 1:nRep) {
@@ -223,8 +267,12 @@ for (Rep in 1:nRep) {
                               spatial = FALSE)
   Rprof(NULL)
   end = Sys.time()
-  print(end - start)
   print("Done creating base population")
+  functionsTime <- rbind(functionsTime,
+                         c(Function = "CrossInitialVirginQueens", Rep = Rep, Year = 0, Period = "0", nColonies = nInd(queens), Time = end-start))
+  write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
+
 
   # Start the year-loop ------------------------------------------------------------------
   for (year in 1:nYear) {
@@ -243,6 +291,8 @@ for (Rep in 1:nRep) {
       print("Done creating initial colonies")
       functionsTime <- rbind(functionsTime,
                              c(Function = "CreateInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+      write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
 
       # Set Location
       print("Setting initial location")
@@ -253,14 +303,30 @@ for (Rep in 1:nRep) {
       print("Done setting the location")
       functionsTime <- rbind(functionsTime,
                              c(Function = "SetInitialLocation", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+      write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
+      print("Setting the initial beekeeper")
+      start = Sys.time()
       # Set the beekeeper to the colonies
       for (colony in 1:nColonies(age1)) {
         age1[[colony]]@misc$Beekeeper <- colonyBeekeeper[colony]
       }
+      end = Sys.time()
+      print("Done setting the beekeeper")
+      functionsTime <- rbind(functionsTime,
+                             c(Function = "SetInitialBeekeeper", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+      write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
 
       print("Record initial colonies")
+      start = Sys.time()
       colonyRecords <- data_rec(datafile = colonyRecords, colonies = age1, year = year)
+      end = Sys.time()
+      print("Done recording")
+      functionsTime <- rbind(functionsTime,
+                             c(Function = "RecordInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+      write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
 
       # If not, promote the age0 to age1, age1 to age2 and remove age2 colonies
     } else {
@@ -280,7 +346,7 @@ for (Rep in 1:nRep) {
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
                            c(Function = "BuildUp", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
-    print(functionsTime)
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     if (year > 1) {
       age2 <- buildUp(age2)
@@ -290,23 +356,48 @@ for (Rep in 1:nRep) {
     print("Splitting the colonies")
     start = Sys.time()
     tmp <- split(age1)
-    age1 <- tmp$remnant
-    # Set the location of the splits - if the beekeeper has another location, it samples another one
-    # If the beekeeper has only one location, it samples the same one
-    newSplitLoc <- sapply(getLocation(age1),
-                          FUN = function(x) sampleBeekeepersLocation(locDF = loc, currentLocation = x, n = 1, excludeCurrentLoc = TRUE))
-    print("New Locations")
-    print(head(newSplitLoc))
-    tmp$split <- setLocation(tmp$split, location = newSplitLoc)
-
-    # Set the
-    # The queens of the splits are 0 years old
-    age0p1 <- tmp$split
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
                            c(Function = "Split", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+    age1 <- tmp$remnant
 
-    # Requeen splits
+    # Set the location of the splits - if the beekeeper has another location, it samples another one
+    # If the beekeeper has only one location, it samples the same one
+    start = Sys.time()
+    newSplitLoc <- sapply(getLocation(age1),
+                          FUN = function(x) sampleBeekeepersLocation(locDF = loc, currentLocation = x, n = 1, excludeCurrentLoc = TRUE))
+    end = Sys.time()
+    functionsTime <- rbind(functionsTime,
+                           c(Function = "SampleSplitLocations", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
+    start = Sys.time()
+    tmp$split <- setLocation(tmp$split, location = newSplitLoc)
+    end = Sys.time()
+    functionsTime <- rbind(functionsTime,
+                           c(Function = "SetLocation", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$split), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
+    # Set the beekeeper of the splits - same beekeeper
+    start = Sys.time()
+    tmp$split <- setBeekeeper(tmp$split, beekeeper = getBeekeeper(age1))
+    end = Sys.time()
+    functionsTime <- rbind(functionsTime,
+                           c(Function = "SetBeekeeper", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$split), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
+
+    # Requeen with a donor colony of a beekeeper
+    start = Sys.time()
+    tmp$split <- reQueenWithBeekeepersDonor(virginMultiColony = tmp$split, donorMultiColony = age1)
+    end = Sys.time()
+    functionsTime <- rbind(functionsTime,
+                           c(Function = "RequeenSplits", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$split), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
+    # The queens of the splits are 0 years old
+    age0p1 <- tmp$split
 
     if (year > 1) {
       # Split all age2 colonies
@@ -317,39 +408,52 @@ for (Rep in 1:nRep) {
       newSplitLoc <- sapply(getLocation(age2),
                             FUN = function(x) sampleBeekeepersLocation(locDF = loc, currentLocation = x, n = 1, excludeCurrentLoc = TRUE))
       tmp$split <- setLocation(tmp$split, location = newSplitLoc)
+      tmp$split <- setBeekeeper(tmp$split, beekeeper = getBeekeeper(age2))
+      tmp$split <- reQueenWithBeekeepersDonor(virginMultiColony = tmp$split, donorMultiColony = age2)
       # The queens of the splits are 0 years old
       age0p1 <- c(age0p1, tmp$split)
     }
-
-    # Create virgin queens
-    # Sample colony for the virgin queens
-    print("Create virgin queens, period 1")
-    virginDonor <- sample.int(n = nColonies(age1), size = 1)
-    # Virgin queens for splits!
-    virginQueens <- createVirginQueens(age1[[virginDonor]], nInd = nColonies(age0p1))
-
-    # Requeen the splits --> queens are now 0 years old --> I think I need to requeen after each even when I still know "mother" colonies
-    age0p1 <- reQueen(age0p1, queen = virginQueens)
 
     # Swarm a percentage of age1 colonies
     start = Sys.time()
     print("Swarm colonies, P1")
     tmp <- pullColonies(age1, p = p1swarm)
     age1 <- tmp$remnant
+    if (nColonies(tmp$pulled) > 0) {
+      swarmBeekeeper <- getBeekeeper(tmp$pulled)
+    }
     tmp <- swarm(tmp$pulled) # No need to set the location to swarms - they inherit the mother location (unless sampleLocation = TRUE)
-    age0p1 <- c(age0p1, tmp$remnant)
-    age1 <- c(age1, tmp$swarm)
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
                            c(Function = "Swarm", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$remnant), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
+    # Set the beekeeper
+    start = Sys.time()
+    if (nColonies(tmp$remnant) > 0) {
+      tmp$remnant <- setBeekeeper(tmp$remnant, beekeeper = swarmBeekeeper)
+    }
+    end = Sys.time()
+    functionsTime <- rbind(functionsTime,
+                           c(Function = "SetBeekeeper", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$remnant), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
+    age0p1 <- c(age0p1, tmp$remnant)
 
     if (year > 1) {
       # Swarm a percentage of age2 colonies
       tmp <- pullColonies(age2, p = p1swarm)
       age2 <- tmp$remnant
+      if (nColonies(tmp$pulled) > 0) {
+        swarmBeekeeper <- getBeekeeper(tmp$pulled)
+      }
       tmp <- swarm(tmp$pulled)
+      # Set the beekeeper
+      if (nColonies(tmp$remnant) > 0) {
+        tmp$remnant <- setBeekeeper(tmp$remnant, beekeeper = swarmBeekeeper)
+      }
       age0p1 <- c(age0p1, tmp$remnant)
-      age2 <- c(age2, tmp$swarm)
+      #age2 <- c(age2, tmp$swarm)
     }
 
     # Supersede age1 colonies
@@ -358,10 +462,13 @@ for (Rep in 1:nRep) {
     tmp <- pullColonies(age1, p = p1supersede)
     age1 <- tmp$remnant
     tmp <- supersede(tmp$pulled)
-    age0p1 <- c(age0p1, tmp)
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
                            c(Function = "Supersede", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
+
+    age0p1 <- c(age0p1, tmp)
 
     if (year > 1) {
       # Supersede age2 colonies
@@ -387,17 +494,21 @@ for (Rep in 1:nRep) {
                       nDrones = nFathersPoisson,
                       crossPlan = "create",
                       spatial = TRUE,
-                      radius = 5,
+                      radius = matingRange,
                       checkCross = "warning")
       end = Sys.time()
       functionsTime <- rbind(functionsTime,
                              c(Function = "Cross", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age0p1), Time = end-start))
+      write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
     } else {
       age0p1 <- cross(age0p1,
                       droneColonies = c(age1, age2),
                       nDrones = nFathersPoisson,
                       crossPlan = "create",
-                      spatial = FALSE)
+                      spatial = TRUE,
+                      radius = matingRange,
+                      checkCross = "warning")
     }
 
     # Collapse
@@ -412,29 +523,59 @@ for (Rep in 1:nRep) {
     # Swarm a percentage of age1 colonies
     # Mellifera
     print("Swarm colonies, P2")
+    start = Sys.time()
     tmp <- pullColonies(age1, p = p2swarm)
     age1 <- tmp$remnant
+    if (nColonies(tmp$pulled) > 0) {
+      swarmBeekeeper <- getBeekeeper(tmp$pulled)
+    }
     tmp <- swarm(tmp$pulled, sampleLocation = FALSE)
+    end = Sys.time()
+    functionsTime <- rbind(functionsTime,
+                           c(Function = "Swarm", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(tmp$remnant), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
+
+    start = Sys.time()
+    if (nColonies(tmp$remnant) > 0) {
+       tmp$remnant <- setBeekeeper(tmp$remnant, beekeeper = swarmBeekeeper)
+    }
+    end = Sys.time()
+    functionsTime <- rbind(functionsTime,
+                           c(Function = "setBeekeeper", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(tmp$remnant), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
     # The queens of the remnant colonies are of age 0
     age0p2 <- tmp$remnant
-    age1 <- c(age1, tmp$swarm) # Decide whether to loose the swarms? In that case, just remove this line
+    #age1 <- c(age1, tmp$swarm) # We're loosing the swarms
 
     if (year > 1) {
       # Swarm a percentage of age2 colonies
       tmp <- pullColonies(age2, p = p2swarm)
       age2 <- tmp$remnant
+      if (nColonies(tmp$pulled) > 0) {
+        swarmBeekeeper <- getBeekeeper(tmp$pulled)
+      }
       tmp <- swarm(tmp$pulled)
+      if (nColonies(tmp$remnant) > 0) {
+        tmp$remnant <- setBeekeeper(tmp$remnant, beekeeper = swarmBeekeeper)
+      }
       # The queens of the remnant colonies are of age 0
       age0p2 <- tmp$remnant
-      age2 <- c(age2, tmp$swarm)
+      #age2 <- c(age2, tmp$swarm)
     }
 
     # Supersede a part of age1 colonies
     print("Supersede colonies, P2")
-
+    start = Sys.time()
     tmp <- pullColonies(age1, p = p2supersede)
     age1 <- tmp$remnant
     tmp <- supersede(tmp$pulled)
+    end = Sys.time()
+    functionsTime <- rbind(functionsTime,
+                           c(Function = "Supersede", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(tmp), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
     # The queens of superseded colonies are of age 0
     age0p2 <- c(age0p2, tmp)
 
@@ -458,11 +599,12 @@ for (Rep in 1:nRep) {
                       nDrones = nFathersPoisson,
                       crossPlan = "create",
                       spatial = TRUE,
-                      radius = 5,
+                      radius = matingRange,
                       checkCross = "warning")
       end = Sys.time()
       functionsTime <- rbind(functionsTime,
                              c(Function = "Cross", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(age0p2), Time = end-start))
+      write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     } else {
       age0p2 <- cross(age0p2,
@@ -470,7 +612,7 @@ for (Rep in 1:nRep) {
                       nDrones = nFathersPoisson,
                       crossPlan = "create",
                       spatial = TRUE,
-                      radius = 5,
+                      radius = matingRange,
                       checkCross = "warning")
     }
 
@@ -489,9 +631,15 @@ for (Rep in 1:nRep) {
     print("PERIOD 3")
     print("Collapse colonies, P3")
 
+    start = Sys.time()
     age0 <- selectColonies(age0, p = (1 - p3collapseAge0))
     age1 <- selectColonies(age1, p = (1 - p3collapseAge1))
     age2 <- NULL
+    end = Sys.time()
+    functionsTime <- rbind(functionsTime,
+                           c(Function = "Collapse", Rep = Rep, Year = year, Period = "3", nColonies = (nColonies(age0) + nColonies(age1)), Time = end-start))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
 
 
     # Maintain the number of colonies ------------------------------------------
@@ -513,6 +661,7 @@ for (Rep in 1:nRep) {
 
 print("Saving image data")
 save.image(paste0("SloSpatialSimulation_", Rep, ".RData"))
+
 #
 # # Plot alive colonies
 # alive <- c(age0, age1)
@@ -533,11 +682,11 @@ save.image(paste0("SloSpatialSimulation_", Rep, ".RData"))
 #
 # # Spatial autocorrelation?
 
-n <- nColonies(alive)
-y <- aliveDF$honeyYield
-ybar <- mean(y)
-
-dy <- y - ybar
-g <- expand.grid(dy, dy)
-yiyj <- g[,1] * g[,2]
-pm <- matrix(yiyj, ncol=n)
+# n <- nColonies(alive)
+# y <- aliveDF$honeyYield
+# ybar <- mean(y)
+#
+# dy <- y - ybar
+# g <- expand.grid(dy, dy)
+# yiyj <- g[,1] * g[,2]
+# pm <- matrix(yiyj, ncol=n)
