@@ -65,7 +65,7 @@ setBeekeeper <- function(x, beekeeper = NULL) {
 locAll <- read.csv("SLOLocations_standardised.csv")
 print(paste0("Number of all locations is ", nrow(locAll)))
 nColoniesPerLocation <- 5 #In reality, it's 15
-locAll$Beekeeper <- as.factor(locAll$Beekeeper)
+#locAll$Beekeeper <- as.factor(locAll$Beekeeper)
 #ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point()
 
 # Sample locations for testing from one region - so they are close together - but have 5 colonies at each location
@@ -78,7 +78,8 @@ dir.create(paste0("NoLoc_", nrow(loc)))
 
 setwd(paste0("NoLoc_", nrow(loc)))
 locList <- rep(Map(c, loc$X_COORDINATE, loc$Y_COORDINATE), nColoniesPerLocation)
-# ggplot(loc, aes(x = X_COORDINATE,y = Y_COORDINATE)) + geom_point()
+colonyBeekeeper <- rep(loc$Beekeeper, nColoniesPerLocation)
+ggplot(loc, aes(x = X_COORDINATE,y = Y_COORDINATE)) + geom_point()
 # length(unique(loc$Beekeeper))
 
 # OR sample the colonies of 20 beekeepers
@@ -253,6 +254,11 @@ for (Rep in 1:nRep) {
       functionsTime <- rbind(functionsTime,
                              c(Function = "SetInitialLocation", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
 
+      # Set the beekeeper to the colonies
+      for (colony in 1:nColonies(age1)) {
+        age1[[colony]]@misc$Beekeeper <- colonyBeekeeper[colony]
+      }
+
       print("Record initial colonies")
       colonyRecords <- data_rec(datafile = colonyRecords, colonies = age1, year = year)
 
@@ -292,11 +298,15 @@ for (Rep in 1:nRep) {
     print("New Locations")
     print(head(newSplitLoc))
     tmp$split <- setLocation(tmp$split, location = newSplitLoc)
+
+    # Set the
     # The queens of the splits are 0 years old
     age0p1 <- tmp$split
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
                            c(Function = "Split", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+
+    # Requeen splits
 
     if (year > 1) {
       # Split all age2 colonies
@@ -318,7 +328,7 @@ for (Rep in 1:nRep) {
     # Virgin queens for splits!
     virginQueens <- createVirginQueens(age1[[virginDonor]], nInd = nColonies(age0p1))
 
-    # Requeen the splits --> queens are now 0 years old
+    # Requeen the splits --> queens are now 0 years old --> I think I need to requeen after each even when I still know "mother" colonies
     age0p1 <- reQueen(age0p1, queen = virginQueens)
 
     # Swarm a percentage of age1 colonies
@@ -523,3 +533,11 @@ save.image(paste0("SloSpatialSimulation_", Rep, ".RData"))
 #
 # # Spatial autocorrelation?
 
+n <- nColonies(alive)
+y <- aliveDF$honeyYield
+ybar <- mean(y)
+
+dy <- y - ybar
+g <- expand.grid(dy, dy)
+yiyj <- g[,1] * g[,2]
+pm <- matrix(yiyj, ncol=n)

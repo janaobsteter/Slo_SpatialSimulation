@@ -46,6 +46,49 @@ sampleBeekeepersLocation <- function(locDF, currentLocation = NULL, excludeCurre
   ret <- beekeeperLocList[sample(1:length(beekeeperLocList), size = n, replace = replace)]
 }
 
+setBeekeeper <- function(x, beekeeper = NULL) {
+  if (isColony(x)) {
+    x@misc$Beekeeper <- as.character(beekeeper[1])
+  } else if (isMultiColony(x)) {
+    for (c in 1:nColonies(x)) {
+      x[[c]] <- setBeekeeper(x = x[[c]], beekeeper = beekeeper[c])
+    }
+  }
+  return(x)
+}
+
+
+getBeekeeper <- function(x) {
+  if (isColony(x)) {
+    ret <- as.character(x@misc$Beekeeper)
+    } else if (isMultiColony(x)) {
+      ret <- sapply(1:nColonies(x), FUN = function(z) getBeekeeper(x[[z]]))
+    }
+  names(ret) <- getId(x)
+  return(ret)
+}
+
+getBeekeepersColonies <- function(multicolony, beekeeper, size = NULL) {
+  if (is.null(size)) {
+    size <- nColonies(multicolony)
+  }
+  bk <- getBeekeeper(multicolony)
+  coloniesIDs <- names(bk)[bk == beekeeper]
+  return(multicolony[sample(coloniesIDs, size = size, replace = FALSE)])
+}
+
+getBeekeepersColoniesID <- function(multicolony, beekeeper, size = NULL) {
+  if (is.null(size)) {
+    size <- nColonies(multicolony)
+  }
+  bk <- getBeekeeper(multicolony)
+  coloniesIDs <- names(bk)[bk == beekeeper]
+  return(sample(coloniesIDs, size = size, replace = FALSE))
+}
+
+
+
+
 # Locations - x, y, and the beekeper
 locAll <- read.csv("SLOLocations_standardised.csv")
 nColoniesPerLocation <- 5 #In reality, it's 15
@@ -53,9 +96,11 @@ locAll$Beekeeper <- as.factor(locAll$Beekeeper)
 ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point()
 
 # Sample locations for testing from one region - so they are close together - but have 5 colonies at each location
-loc <- locAll[locAll$X_COORDINATE < 20000 & locAll$Y_COORDINATE < 8000 ,]
+loc <- locAll[locAll$X_COORDINATE < 15000 & locAll$Y_COORDINATE < 25000 ,]
+loc <- loc[!is.na(loc$Beekeeper),]
 nrow(loc)
 locList <- rep(Map(c, loc$X_COORDINATE, loc$Y_COORDINATE), nColoniesPerLocation)
+colonyBeekeeper <- rep(loc$Beekeeper, nColoniesPerLocation)
 ggplot(loc, aes(x = X_COORDINATE,y = Y_COORDINATE)) + geom_point()
 length(unique(loc$Beekeeper))
 
@@ -116,12 +161,15 @@ functionsTime <- data.frame(Function = NA, Rep = NA, Year = NA, Period = NA, nCo
 # Prepare recording function
 data_rec <- function(datafile, colonies, year) {
   queens = mergePops(getQueen(colonies))
+  location = getLocation(colonies, collapse = TRUE)
   datafile = rbind(datafile,
                    data.frame(colonies             = deparse(substitute(colonies)),
                               year                 = year,
                               Id                   = queens@id,
                               MId                  = queens@mother,
                               FId                  = queens@father,
+                              locationX            = location[1,],
+                              locationY            = location[2,],
                               nFathers             = nFathers(queens),
                               nDPQ                 = sapply(getFathers(queens), function(x) length(unique(x@mother))),
                               nCsdAlColony         = sapply(colonies@colonies, function(x) nCsdAlleles(x, collapse = TRUE)),
@@ -213,6 +261,9 @@ for (Rep in 1:nRep) {
       end = Sys.time()
       functionsTime <- rbind(functionsTime,
                              c(Function = "SetInitialLocation", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+      # Set the beekeeper to the colonies
+      age1 <- setBeekeeper(age1, beekeeper = colonyBeekeeper)
+      #table(getBeekeeper(age1))
 
       print("Record initial colonies")
       colonyRecords <- data_rec(datafile = colonyRecords, colonies = age1, year = year)
@@ -245,11 +296,30 @@ for (Rep in 1:nRep) {
     start = Sys.time()
     tmp <- split(age1)
     age1 <- tmp$remnant
+
     # Set the location of the splits - if the beekeeper has another location, it samples another one
     # If the beekeeper has only one location, it samples the same one
     newSplitLoc <- sapply(getLocation(age1),
                           FUN = function(x) sampleBeekeepersLocation(locDF = loc, currentLocation = x, n = 1, excludeCurrentLoc = TRUE))
     tmp$split <- setLocation(tmp$split, location = newSplitLoc)
+
+    # Set the beekeeper of the splits
+    tmp$split <- setBeekeeper(tmp$split, beekeeper = getBeekeeper(age1))
+
+
+    # Sample a colony for each beekeeper to get virgin queens from
+    age1Bk <- getBeekeeper(age1)
+    for (bk in unique(age1Bk)) {
+      beekeepersVirginColony[[bk]] <- sample(names(age1Bk)[which(age1Bk == bk)], size = 1)
+    }
+
+    # Requeen the virgin queens in the split from another virgin queens from the same beekeeper
+    for (colony in 1:nColonies(tmp$split)) {
+      splitBk <- getBeekeeper(tmp$split[[colony]])
+      virginQueen <- createVirginQueens(x = age1[[beekeepersVirginColony[[splitBk]]]], nInd = 1)
+      tmp$split[[colony]] <- reQueen(tmp$split[[colony]], queen = virginQueen)
+    }
+
     # The queens of the splits are 0 years old
     age0p1 <- tmp$split
     end = Sys.time()
