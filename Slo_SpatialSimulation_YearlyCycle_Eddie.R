@@ -1,14 +1,19 @@
 # Set the working directory
-setwd("~/Documents/1Projects/SIMplyBee_devel/Spatial/")
 # Load packages
 library(SIMplyBee)
 library(tictoc)
 library(R6)
-library(Matrix)
 library(dplyr)
 library(tidyr)
-library(viridis)
 
+args = commandArgs(trailingOnly=TRUE)
+xLim = as.integer(args[1])
+yLim = as.integer(args[2])
+
+print("Xlimit")
+print(xLim)
+print("Ylimit")
+print(yLim)
 # Define functions
 maintainPopulationSize <- function(age0 = NULL, age1 = NULL, popSize = NULL) {
   if ((nColonies(age0) + nColonies(age1)) > popSize) { # check if the sum of all colonies is greater than apiary size
@@ -33,6 +38,7 @@ maintainPopulationSize <- function(age0 = NULL, age1 = NULL, popSize = NULL) {
   }
 }
 
+
 sampleBeekeepersLocation <- function(locDF, currentLocation = NULL, excludeCurrentLoc = FALSE, n = 1, replace = TRUE) {
   beekeeper <- as.character(unique(locDF$Beekeeper[locDF$X_COORDINATE == currentLocation[1] & locDF$Y_COORDINATE == currentLocation[2]]))
   beekeeperLoc <- locDF[(locDF$Beekeeper %in% beekeeper), ]
@@ -45,15 +51,32 @@ sampleBeekeepersLocation <- function(locDF, currentLocation = NULL, excludeCurre
   ret <- beekeeperLocList[sample(1:length(beekeeperLocList), size = n, replace = replace)]
 }
 
+setBeekeeper <- function(x, beekeeper = NULL) {
+  if (isColony(x)) {
+    x@misc$Beekeeper <- as.character(beekeeper[1])
+  } else if (isMultiColony(x)) {
+    for (c in 1:nColonies(x)) {
+      x[[c]] <- setBeekeeper(x = x[[c]], beekeeper = beekeeper[c])
+    }
+  }
+  return(x)
+}
 # Locations - x, y, and the beekeper
 locAll <- read.csv("SLOLocations_standardised.csv")
+print(paste0("Number of all locations is ", nrow(locAll)))
 nColoniesPerLocation <- 5 #In reality, it's 15
 locAll$Beekeeper <- as.factor(locAll$Beekeeper)
 #ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point()
 
 # Sample locations for testing from one region - so they are close together - but have 5 colonies at each location
-loc <- locAll[locAll$X_COORDINATE < 100000 ,]
-nrow(loc)
+loc <- locAll[(locAll$X_COORDINATE < xLim) & (locAll$Y_COORDINATE < yLim), ]
+loc <- loc[!is.na(loc$Beekeeper),]
+print(paste0("locAll[locAll$X_COORDINATE <", xLim, " & locAll$Y_COORDINATE < ", yLim,  "]"))
+
+print(paste0("Number of locations is ", nrow(loc)))
+dir.create(paste0("NoLoc_", nrow(loc)))
+
+setwd(paste0("NoLoc_", nrow(loc)))
 locList <- rep(Map(c, loc$X_COORDINATE, loc$Y_COORDINATE), nColoniesPerLocation)
 # ggplot(loc, aes(x = X_COORDINATE,y = Y_COORDINATE)) + geom_point()
 # length(unique(loc$Beekeeper))
@@ -66,11 +89,12 @@ locList <- rep(Map(c, loc$X_COORDINATE, loc$Y_COORDINATE), nColoniesPerLocation)
 
 # Founder population parameters -------------------------------------------------------------------
 nColonies = nrow(loc) * nColoniesPerLocation              # Number of colonies in Slovenia, using a smaller number for now
+print(paste0("Number of colonies is ", nColonies))
 nFounderQueens = nColonies                                # How many queens do we need to start colonies
 nFounderDPQ <- round(nFounderQueens * 0.25)                      # How many queens do we need to create initial drones
 nFounders <- nFounderQueens + nFounderDPQ                 # How many founders all together
 nChr = 1                                                  # Number of chromosomes
-nDronesPerQueen = 100                                      # Number of drones created per founder DPQ
+nDronesPerQueen = 100                                     # Number of drones created per founder DPQ
 nSegSites = 2000                                          # Number of segregating sites per chromosome
 nQtlPerChr = 100                                          # Number of QTLs per chromosome
 
@@ -136,8 +160,6 @@ for (Rep in 1:nRep) {
   # Rep <- 1 (you can use this to check if your code is running alright for one whole loop)
   cat(paste0("Rep: ", Rep, "/", nRep, "\n"))
   tic(paste0(nYear, 'y loop'))         # Measure cpu time
-  Rprof()                              # Start profiling
-
 
   # Founder population ---------------------------------------------------------
   # Using simulateHoneyBeeGenomes is a great way to get a basic founder gene pool
@@ -156,7 +178,9 @@ for (Rep in 1:nRep) {
 
 
   # STEP 2: Create SP object and write in the global simulation/population parameters
+  print("Simulate the founders")
   founderGenomes <- quickHaplo(nInd = nFounders, nChr = nChr, segSites = nSegSites)
+  print("Done simulating the founders")
   SP <- SimParamBee$new(founderGenomes, csdChr = ifelse(nChr >= 3, 3, 1), nCsdAlleles = 128)
   SP$nWorkers <- noWorkers
   SP$nDrones <- noDrones
@@ -179,18 +203,27 @@ for (Rep in 1:nRep) {
   SP$setVarE(varE = residualVar)
 
   # STEP 3: Set up your base population
+  print("Create the base virgin queens")
   # Create a base population - for now, we simulate all the founder but this will not the case with larger numbers
   virginQueens <- createVirginQueens(x = founderGenomes)
+  print("Create base drones")
   # Create drones
   drones <- createDrones(x = virginQueens[1:nFounderDPQ], nInd = nDronesPerQueen)
   # Get fathers for Mel, MelCross and Car
   #fathers <- pullDroneGroupsFromDCA(drones$Mel, n = nInd(virginQueens$Mel[1:apiarySize]), nDrones = nFathersPoisson)
 
   # Mate virgin queens with fathers to make them queens
+  print("Mate base queens")
+  start = Sys.time()
+  Rprof(filename = "Cross.out", memory.profiling = TRUE)
   queens <-  SIMplyBee::cross(x = virginQueens[(nFounderDPQ + 1): nFounders],
                               drones = drones,
                               crossPlan = "create",
                               spatial = FALSE)
+  Rprof(NULL)
+  end = Sys.time()
+  print(end - start)
+  print("Done creating base population")
 
   # Start the year-loop ------------------------------------------------------------------
   for (year in 1:nYear) {
@@ -201,15 +234,22 @@ for (Rep in 1:nRep) {
     if (year == 1) {
       print("Creating initial colonies")
       start = Sys.time()
+      Rprof(filename = "CreateMultiColony.out", memory.profiling = TRUE)
       age1 <- createMultiColony(x = queens)
+      Rprof(NULL)
       end = Sys.time()
+      print(end - start)
+      print("Done creating initial colonies")
       functionsTime <- rbind(functionsTime,
                              c(Function = "CreateInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
 
-      # Set Locatoin
+      # Set Location
+      print("Setting initial location")
       start = Sys.time()
       age1 <- setLocation(age1, location = locList)
       end = Sys.time()
+      print(end - start)
+      print("Done setting the location")
       functionsTime <- rbind(functionsTime,
                              c(Function = "SetInitialLocation", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
 
@@ -234,6 +274,7 @@ for (Rep in 1:nRep) {
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
                            c(Function = "BuildUp", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+    print(functionsTime)
 
     if (year > 1) {
       age2 <- buildUp(age2)
@@ -248,6 +289,8 @@ for (Rep in 1:nRep) {
     # If the beekeeper has only one location, it samples the same one
     newSplitLoc <- sapply(getLocation(age1),
                           FUN = function(x) sampleBeekeepersLocation(locDF = loc, currentLocation = x, n = 1, excludeCurrentLoc = TRUE))
+    print("New Locations")
+    print(head(newSplitLoc))
     tmp$split <- setLocation(tmp$split, location = newSplitLoc)
     # The queens of the splits are 0 years old
     age0p1 <- tmp$split
