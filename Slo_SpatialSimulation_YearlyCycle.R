@@ -303,12 +303,7 @@ for (Rep in 1:nRep) {
                           FUN = function(x) sampleBeekeepersLocation(locDF = loc, currentLocation = x, n = 1, excludeCurrentLoc = TRUE))
     tmp$split <- setLocation(tmp$split, location = newSplitLoc)
 
-    # Set the beekeeper of the splits
-    tmp$split <- setBeekeeper(tmp$split, beekeeper = getBeekeeper(age1))
 
-
-    # Sample a colony for each beekeeper to get virgin queens from
-    age1Bk <- getBeekeeper(age1)
     for (bk in unique(age1Bk)) {
       beekeepersVirginColony[[bk]] <- sample(names(age1Bk)[which(age1Bk == bk)], size = 1)
     }
