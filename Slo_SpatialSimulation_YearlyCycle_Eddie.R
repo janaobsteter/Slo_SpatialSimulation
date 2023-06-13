@@ -268,7 +268,7 @@ for (Rep in 1:nRep) {
   end = Sys.time()
   print("Done creating base population")
   functionsTime <- rbind(functionsTime,
-                         c(Function = "CrossInitialVirginQueens", Rep = Rep, Year = 0, Period = "0", nColonies = nInd(queens), Time = end-start))
+                         c(Function = "CrossInitialVirginQueens", Rep = Rep, Year = 0, Period = "0", nColonies = nInd(queens), Time = difftime(end, start, units = "secs")))
   write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
 
@@ -286,10 +286,10 @@ for (Rep in 1:nRep) {
       age1 <- createMultiColony(x = queens)
       Rprof(NULL)
       end = Sys.time()
-      print(end - start)
+      print(difftime(end, start, units = "secs"))
       print("Done creating initial colonies")
       functionsTime <- rbind(functionsTime,
-                             c(Function = "CreateInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+                             c(Function = "CreateInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
       write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
 
@@ -298,10 +298,10 @@ for (Rep in 1:nRep) {
       start = Sys.time()
       age1 <- setLocation(age1, location = locList)
       end = Sys.time()
-      print(end - start)
+      print(difftime(end, start, units = "secs"))
       print("Done setting the location")
       functionsTime <- rbind(functionsTime,
-                             c(Function = "SetInitialLocation", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+                             c(Function = "SetInitialLocation", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
       write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
       print("Setting the initial beekeeper")
@@ -313,7 +313,7 @@ for (Rep in 1:nRep) {
       end = Sys.time()
       print("Done setting the beekeeper")
       functionsTime <- rbind(functionsTime,
-                             c(Function = "SetInitialBeekeeper", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+                             c(Function = "SetInitialBeekeeper", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
       write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
 
@@ -323,7 +323,7 @@ for (Rep in 1:nRep) {
       end = Sys.time()
       print("Done recording")
       functionsTime <- rbind(functionsTime,
-                             c(Function = "RecordInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+                             c(Function = "RecordInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
       write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
 
@@ -344,7 +344,7 @@ for (Rep in 1:nRep) {
     age1 <- buildUp(age1)
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "BuildUp", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+                           c(Function = "BuildUp", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     if (year > 1) {
@@ -357,7 +357,7 @@ for (Rep in 1:nRep) {
     tmp <- split(age1)
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "Split", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+                           c(Function = "Split", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
     age1 <- tmp$remnant
 
@@ -370,14 +370,14 @@ for (Rep in 1:nRep) {
                                                                      excludeCurrentLoc = TRUE))
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "SampleSplitLocations", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
+                           c(Function = "SampleSplitLocations", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     start = Sys.time()
     tmp$split <- setLocation(tmp$split, location = newSplitLoc)
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "SetLocation", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$split), Time = end-start))
+                           c(Function = "SetLocation", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$split), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     # Set the beekeeper of the splits - same beekeeper
@@ -385,7 +385,7 @@ for (Rep in 1:nRep) {
     tmp$split <- setBeekeeper(tmp$split, beekeeper = getBeekeeper(age1))
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "SetBeekeeper", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$split), Time = end-start))
+                           c(Function = "SetBeekeeper", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$split), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
 
@@ -394,7 +394,7 @@ for (Rep in 1:nRep) {
     tmp$split <- reQueenWithBeekeepersDonor(virginMultiColony = tmp$split, donorMultiColony = age1)
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "RequeenSplits", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$split), Time = end-start))
+                           c(Function = "RequeenSplits", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$split), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     # The queens of the splits are 0 years old
@@ -426,7 +426,7 @@ for (Rep in 1:nRep) {
     tmp <- swarm(tmp$pulled) # No need to set the location to swarms - they inherit the mother location (unless sampleLocation = TRUE)
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "Swarm", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$remnant), Time = end-start))
+                           c(Function = "Swarm", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$remnant), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     # Set the beekeeper
@@ -436,7 +436,7 @@ for (Rep in 1:nRep) {
     }
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "SetBeekeeper", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$remnant), Time = end-start))
+                           c(Function = "SetBeekeeper", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp$remnant), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     age0p1 <- c(age0p1, tmp$remnant)
@@ -465,7 +465,7 @@ for (Rep in 1:nRep) {
     tmp <- supersede(tmp$pulled)
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "Supersede", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp), Time = end-start))
+                           c(Function = "Supersede", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(tmp), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
 
@@ -499,7 +499,7 @@ for (Rep in 1:nRep) {
                       checkCross = "warning")
       end = Sys.time()
       functionsTime <- rbind(functionsTime,
-                             c(Function = "Cross", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age0p1), Time = end-start))
+                             c(Function = "Cross", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age0p1), Time = difftime(end, start, units = "secs")))
       write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     } else {
@@ -533,7 +533,7 @@ for (Rep in 1:nRep) {
     tmp <- swarm(tmp$pulled, sampleLocation = FALSE)
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "Swarm", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(tmp$remnant), Time = end-start))
+                           c(Function = "Swarm", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(tmp$remnant), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
 
@@ -543,7 +543,7 @@ for (Rep in 1:nRep) {
     }
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "setBeekeeper", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(tmp$remnant), Time = end-start))
+                           c(Function = "setBeekeeper", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(tmp$remnant), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     # The queens of the remnant colonies are of age 0
@@ -574,7 +574,7 @@ for (Rep in 1:nRep) {
     tmp <- supersede(tmp$pulled)
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "Supersede", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(tmp), Time = end-start))
+                           c(Function = "Supersede", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(tmp), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     # The queens of superseded colonies are of age 0
@@ -604,7 +604,7 @@ for (Rep in 1:nRep) {
                       checkCross = "warning")
       end = Sys.time()
       functionsTime <- rbind(functionsTime,
-                             c(Function = "Cross", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(age0p2), Time = end-start))
+                             c(Function = "Cross", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(age0p2), Time = difftime(end, start, units = "secs")))
       write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     } else {
@@ -638,7 +638,7 @@ for (Rep in 1:nRep) {
     age2 <- NULL
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
-                           c(Function = "Collapse", Rep = Rep, Year = year, Period = "3", nColonies = (nColonies(age0) + nColonies(age1)), Time = end-start))
+                           c(Function = "Collapse", Rep = Rep, Year = year, Period = "3", nColonies = (nColonies(age0) + nColonies(age1)), Time = difftime(end, start, units = "secs")))
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
 
