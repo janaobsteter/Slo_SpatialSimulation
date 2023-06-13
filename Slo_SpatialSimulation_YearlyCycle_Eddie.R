@@ -171,8 +171,8 @@ residualVar <- 1/3 * nonAVar
 
 
 # Create a directory
-#dir.create(paste0("NoLoc_", nrow(loc)))
-#setwd(paste0("NoLoc_", nrow(loc)))
+dir.create(paste0("NoLoc_", nrow(loc)))
+setwd(paste0("NoLoc_", nrow(loc)))
 
 # Create data frames for recording the number of age0 and age1 colonies, csd variability and for recording cpu time
 loopTime <- data.frame(Rep = NA, tic = NA, toc = NA, msg = NA, time = NA)
