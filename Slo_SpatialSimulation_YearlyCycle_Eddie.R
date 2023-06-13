@@ -1,10 +1,12 @@
 # Set the working directory
+#setwd("~/Documents/1Projects/SIMplyBee_devel/Spatial/")
 # Load packages
 library(SIMplyBee)
 library(tictoc)
 library(R6)
 library(dplyr)
 library(tidyr)
+library(Matrix)
 
 args = commandArgs(trailingOnly=TRUE)
 xLim = as.integer(args[1])
@@ -108,7 +110,7 @@ reQueenWithBeekeepersDonor <- function(virginMultiColony, donorMultiColony) {
 }
 
 # Locations - x, y, and the beekeper
-locAll <- read.csv("SLOLocations_standardised.csv")
+locAll <- read.csv("Data/SLOLocations_standardised.csv")
 print(paste0("Number of all locations is ", nrow(locAll)))
 nColoniesPerLocation <- 5 #In reality, it's 15
 #locAll$Beekeeper <- as.factor(locAll$Beekeeper)
@@ -141,6 +143,7 @@ noWorkers <- 10                # Number of workers in a full colony
 noDrones <- 1                  # Number of drones in a full colony (typically nWorkers * 0.2 (not in the example))
 noFathers <- nFathersPoisson   # Number of drones the queen mates with (could also be a function)
 noVirginQueens <- 1            # Number of created virgin queens
+spatialMating <- TRUE        # Whether to implement random (FALSE) or spatial (TRUE) mating
 matingRange <- 5000            # Range of mating in metres!
 
 # Period parameters -------------------------------------------------------------------
@@ -170,8 +173,9 @@ residualVar <- 1/3 * nonAVar
 
 
 # Create a directory
-#dir.create(paste0("NoLoc_", nrow(loc)))
-#setwd(paste0("NoLoc_", nrow(loc)))
+dirName <- paste0(ifelse(spatialMating, "Spatial", "Random"), "_NoLoc_", nrow(loc))
+dir.create(dirName)
+setwd(dirName)
 
 # Create data frames for recording the number of age0 and age1 colonies, csd variability and for recording cpu time
 loopTime <- data.frame(Rep = NA, tic = NA, toc = NA, msg = NA, time = NA)
@@ -326,6 +330,29 @@ for (Rep in 1:nRep) {
                              c(Function = "RecordInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
       write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
+      # Compute the relationship matrix
+      print("Computing GRM")
+      start = Sys.time()
+      queenGeno <- getSnpGeno(getQueen(age1, collapse = TRUE))
+      Gmatrix <- Gmatrix(SNPmatrix = queenGeno,
+                         method = "VanRaden")
+      end = Sys.time()
+      print("Done recording")
+      functionsTime <- rbind(functionsTime,
+                             c(Function = "ComputeGRM", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
+      write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
+      # Save the Gmatrix
+      save(Gmatrix, file = paste0("GRMInitial_", year, ".Rdata"))
+
+
+      # # Order by the X-location
+      # xOrderedId <- colonyRecords %>%  filter(Id %in% getId(getQueen(age1, collapse = TRUE))) %>%
+      #   select(Id, locationX) %>%  arrange(locationX) %>% select(Id)
+      # # Order the Gmatrix by X
+      # xMatch <- match(as.character(xOrderedId$Id), rownames(Gmatrix))
+      # xOrderedG <- Gmatrix[xMatch, xMatch]
+      #
 
       # If not, promote the age0 to age1, age1 to age2 and remove age2 colonies
     } else {
@@ -406,8 +433,10 @@ for (Rep in 1:nRep) {
       age2 <- tmp$remnant
       # Set the location of the splits - if the beekeeper has another location, it samples another one
       # If the beekeeper has only one location, it samples the same one
-      newSplitLoc <- sapply(getLocation(age2),
-                            FUN = function(x) sampleBeekeepersLocation(locDF = loc, currentLocation = x, n = 1, excludeCurrentLoc = TRUE))
+      newSplitLoc <- sapply(1:nColonies(age2),
+                            FUN = function(x) sampleBeekeepersLocation(locDF = loc, beekeeper = getBeekeeper(age2[[x]]),
+                                                                       currentLocation = getLocation(age2[[1]]), n = 1,
+                                                                       excludeCurrentLoc = TRUE))
       tmp$split <- setLocation(tmp$split, location = newSplitLoc)
       tmp$split <- setBeekeeper(tmp$split, beekeeper = getBeekeeper(age2))
       tmp$split <- reQueenWithBeekeepersDonor(virginMultiColony = tmp$split, donorMultiColony = age2)
@@ -494,7 +523,7 @@ for (Rep in 1:nRep) {
                       droneColonies = age1,
                       nDrones = nFathersPoisson,
                       crossPlan = "create",
-                      spatial = TRUE,
+                      spatial = spatialMating,
                       radius = matingRange,
                       checkCross = "warning")
       end = Sys.time()
@@ -507,7 +536,7 @@ for (Rep in 1:nRep) {
                       droneColonies = c(age1, age2),
                       nDrones = nFathersPoisson,
                       crossPlan = "create",
-                      spatial = TRUE,
+                      spatial = spatialMating,
                       radius = matingRange,
                       checkCross = "warning")
     }
@@ -539,7 +568,7 @@ for (Rep in 1:nRep) {
 
     start = Sys.time()
     if (nColonies(tmp$remnant) > 0) {
-       tmp$remnant <- setBeekeeper(tmp$remnant, beekeeper = swarmBeekeeper)
+      tmp$remnant <- setBeekeeper(tmp$remnant, beekeeper = swarmBeekeeper)
     }
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
@@ -599,7 +628,7 @@ for (Rep in 1:nRep) {
                       droneColonies = age1,
                       nDrones = nFathersPoisson,
                       crossPlan = "create",
-                      spatial = TRUE,
+                      spatial = spatialMating,
                       radius = matingRange,
                       checkCross = "warning")
       end = Sys.time()
@@ -612,7 +641,7 @@ for (Rep in 1:nRep) {
                       droneColonies = c(age1, age2),
                       nDrones = nFathersPoisson,
                       crossPlan = "create",
-                      spatial = TRUE,
+                      spatial = spatialMating,
                       radius = matingRange,
                       checkCross = "warning")
     }
@@ -625,7 +654,22 @@ for (Rep in 1:nRep) {
 
     # Merge all age 0 colonies (from both periods)
     age0 <- c(age0p1, age0p2)
-    #colonyRecords <- data_rec(datafile = colonyRecords, colonies = age0, year = year, population = "Pop")
+    colonyRecords <-data_rec(datafile = colonyRecords, colonies = age0, year = year)
+
+    # Compute the relationship matrix
+    print("Computing GRM")
+    start = Sys.time()
+    queenGeno <- getSnpGeno(getQueen(age0, collapse = TRUE))
+    Gmatrix <- Gmatrix(SNPmatrix = queenGeno,
+                       method = "VanRaden")
+    end = Sys.time()
+    print("Done recording")
+    functionsTime <- rbind(functionsTime,
+                           c(Function = "ComputeGRM", Rep = Rep, Year = year, Period = "2", nColonies = nColonies(age0), Time = difftime(end, start, units = "secs")))
+    write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+
+    # Save the Gmatrix
+    save(Gmatrix, file = paste0("GRMAge0_", year, ".Rdata"))
 
     # Period3 ------------------------------------------------------------------
     # Collapse age0 queens
@@ -649,7 +693,7 @@ for (Rep in 1:nRep) {
     age0 <- maintainPopulationSize(age0 = age0, age1 = age1, popSize = nColonies)
 
     if ((nColonies(age0) + nColonies(age1)) != nColonies) {
-        stop(paste0("The number of colonies does not match the apiary size!"))
+      stop(paste0("The number of colonies does not match the apiary size!"))
     }
 
 
