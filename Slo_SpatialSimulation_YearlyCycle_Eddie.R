@@ -39,8 +39,7 @@ maintainPopulationSize <- function(age0 = NULL, age1 = NULL, popSize = NULL) {
   }
 }
 
-sampleBeekeepersLocation <- function(locDF, currentLocation = NULL, excludeCurrentLoc = FALSE, n = 1, replace = TRUE) {
-  beekeeper <- as.character(unique(locDF$Beekeeper[locDF$X_COORDINATE == currentLocation[1] & locDF$Y_COORDINATE == currentLocation[2]]))
+sampleBeekeepersLocation <- function(locDF, beekeeper = NULL, currentLocation = NULL, excludeCurrentLoc = FALSE, n = 1, replace = TRUE) {
   beekeeperLoc <- locDF[(locDF$Beekeeper %in% beekeeper), ]
   beekeeperLocList <- Map(c, beekeeperLoc$X_COORDINATE, beekeeperLoc$Y_COORDINATE)
   if (excludeCurrentLoc) {
@@ -365,8 +364,10 @@ for (Rep in 1:nRep) {
     # Set the location of the splits - if the beekeeper has another location, it samples another one
     # If the beekeeper has only one location, it samples the same one
     start = Sys.time()
-    newSplitLoc <- sapply(getLocation(age1),
-                          FUN = function(x) sampleBeekeepersLocation(locDF = loc, currentLocation = x, n = 1, excludeCurrentLoc = TRUE))
+    newSplitLoc <- sapply(1:nColonies(age1),
+                          FUN = function(x) sampleBeekeepersLocation(locDF = loc, beekeeper = getBeekeeper(age1[[x]]),
+                                                                     currentLocation = getLocation(age1[[1]]), n = 1,
+                                                                     excludeCurrentLoc = TRUE))
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
                            c(Function = "SampleSplitLocations", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = end-start))
