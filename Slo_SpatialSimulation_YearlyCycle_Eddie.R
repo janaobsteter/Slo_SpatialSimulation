@@ -7,10 +7,12 @@ library(R6)
 library(dplyr)
 library(tidyr)
 library(Matrix)
+library(AGHmatrix)
 
 args = commandArgs(trailingOnly=TRUE)
 xLim = as.integer(args[1])
 yLim = as.integer(args[2])
+spatialInput = as.logical(as.integer(args[3]))
 
 print("Xlimit")
 print(xLim)
@@ -143,7 +145,7 @@ noWorkers <- 10                # Number of workers in a full colony
 noDrones <- 1                  # Number of drones in a full colony (typically nWorkers * 0.2 (not in the example))
 noFathers <- nFathersPoisson   # Number of drones the queen mates with (could also be a function)
 noVirginQueens <- 1            # Number of created virgin queens
-spatialMating <- TRUE        # Whether to implement random (FALSE) or spatial (TRUE) mating
+spatialMating <- spatialInput  # Whether to implement random (FALSE) or spatial (TRUE) mating
 matingRange <- 5000            # Range of mating in metres!
 
 # Period parameters -------------------------------------------------------------------
