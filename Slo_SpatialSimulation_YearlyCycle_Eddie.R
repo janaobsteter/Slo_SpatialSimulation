@@ -7,6 +7,7 @@ library(R6)
 library(dplyr)
 library(tidyr)
 library(Matrix)
+library(AGHmatrix)
 
 args = commandArgs(trailingOnly=TRUE)
 xLim = as.integer(args[1])
@@ -114,10 +115,11 @@ locAll <- read.csv("Data/SLOLocations_standardised.csv")
 print(paste0("Number of all locations is ", nrow(locAll)))
 nColoniesPerLocation <- 5 #In reality, it's 15
 #locAll$Beekeeper <- as.factor(locAll$Beekeeper)
-#ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point()
+#ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point() + geom_hline(aes(yintercept = 75000, col = "red"))+ geom_hline(aes(yintercept = 74700, col = "red"))
 
 # Sample locations for testing from one region - so they are close together - but have 5 colonies at each location
 loc <- locAll[(locAll$X_COORDINATE < xLim) & (locAll$Y_COORDINATE < yLim), ]
+loc <- locAll[(locAll$Y_COORDINATE < 75000) & (locAll$Y_COORDINATE > 74700), ]
 loc <- loc[!is.na(loc$Beekeeper),]
 
 print(paste0("Number of locations is ", nrow(loc)))
@@ -275,6 +277,9 @@ for (Rep in 1:nRep) {
                          c(Function = "CrossInitialVirginQueens", Rep = Rep, Year = 0, Period = "0", nColonies = nInd(queens), Time = difftime(end, start, units = "secs")))
   write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
+  #Compute base AF
+  baseAF <- calcBeeAlleleFreq(x = getSnpGeno(queens),
+                              sex = queens@sex)
 
 
   # Start the year-loop ------------------------------------------------------------------
@@ -334,8 +339,9 @@ for (Rep in 1:nRep) {
       print("Computing GRM")
       start = Sys.time()
       queenGeno <- getSnpGeno(getQueen(age1, collapse = TRUE))
-      Gmatrix <- Gmatrix(SNPmatrix = queenGeno,
-                         method = "VanRaden")
+      Gmatrix <- calcBeeGRMIbs(x = queenGeno,
+                               sex = rep("F", nColonies(age1)),
+                               alleleFreq = baseAF)
       end = Sys.time()
       print("Done recording")
       functionsTime <- rbind(functionsTime,
@@ -660,8 +666,9 @@ for (Rep in 1:nRep) {
     print("Computing GRM")
     start = Sys.time()
     queenGeno <- getSnpGeno(getQueen(age0, collapse = TRUE))
-    Gmatrix <- Gmatrix(SNPmatrix = queenGeno,
-                       method = "VanRaden")
+    Gmatrix <- calcBeeGRMIbs(x = queenGeno,
+                             sex = rep("F", nColonies(age0)),
+                             alleleFreq = baseAF)
     end = Sys.time()
     print("Done recording")
     functionsTime <- rbind(functionsTime,

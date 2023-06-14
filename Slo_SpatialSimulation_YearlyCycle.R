@@ -90,7 +90,7 @@ getBeekeepersColoniesID <- function(multicolony, beekeeper, size = NULL) {
 
 
 # Locations - x, y, and the beekeper
-locAll <- read.csv("SLOLocations_standardised.csv")
+locAll <- read.csv("Data/SLOLocations_standardised.csv")
 nColoniesPerLocation <- 5 #In reality, it's 15
 locAll$Beekeeper <- as.factor(locAll$Beekeeper)
 ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point()
