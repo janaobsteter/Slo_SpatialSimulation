@@ -8,11 +8,14 @@ library(dplyr)
 library(tidyr)
 library(Matrix)
 library(AGHmatrix)
+library(tidyverse)
+library(INLA)
 
 args = commandArgs(trailingOnly=TRUE)
 xLim = as.integer(args[1])
 yLim = as.integer(args[2])
 spatialInput = as.logical(as.integer(args[3]))
+#xMin = 115000; xMax = 125000; yMin = 5000; yMax = 30000
 
 print("Xlimit")
 print(xLim)
@@ -65,7 +68,6 @@ setBeekeeper <- function(x, beekeeper = NULL) {
   return(x)
 }
 
-
 getBeekeeper <- function(x) {
   if (isColony(x)) {
     ret <- as.character(x@misc$Beekeeper)
@@ -111,6 +113,68 @@ reQueenWithBeekeepersDonor <- function(virginMultiColony, donorMultiColony) {
   return(virginMultiColony)
 }
 
+computeSpatialPheno <- function(colonies, locDF, trait = 1, beekeepers, yearEff, resVar) {
+  myMapCasteToColonyPheno <- function(colony) {
+    yield <- mapCasteToColonyPheno(colony,
+                                   queenTrait = trait,
+                                   queenFUN = function(x) x,
+                                   workersTrait = NULL,
+                                   checkProduction = TRUE)
+  }
+  # Compute the phenotype of the colony
+  pheno <- data.frame(Pheno = calcColonyPheno(x = colonies, FUN = myMapCasteToColonyPheno)) %>%  dplyr::mutate(colonyID = rownames(.))
+
+  # Get location and beekeeper of the colonies
+  locMultiColony <- as.data.frame(getLocation(colonies, collapse = TRUE)) %>%
+    dplyr::mutate(colonyID = rownames(.)) %>%
+    rename(X_COORDINATE = V1, Y_COORDINATE = V2)
+  beekeeperMultiColony <- data.frame(Beekeeper = getBeekeeper(colonies)) %>%
+    dplyr::mutate(colonyID = rownames(.))
+
+  phenoLoc <- list(pheno, locMultiColony, beekeeperMultiColony) %>%
+    reduce(full_join, by = "colonyID") %>%
+    dplyr::mutate(Beekeeper = as.integer(Beekeeper))
+
+  phenoLocSpatial <- list(phenoLoc, locDF) %>%
+    reduce(left_join, by = c("X_COORDINATE", "Y_COORDINATE", "Beekeeper")) %>%
+    list(., beekeepers) %>% reduce(left_join, by = "Beekeeper") %>%
+    dplyr::mutate(Residual = sampleEffect(n = nrow(.), var = resVar)) %>%
+    dplyr::mutate(FullPheno = Pheno + BeekeeperEffect + c(yearEff) + BeekeeperYearEffect + SpatialEffect + Residual)
+  return(phenoLocSpatial %>% select(colonyID, FullPheno, Beekeeper, SpatialEffect, BeekeeperEffect))
+}
+
+sampleEffect = function(n, var) {
+  cbind(rnorm(n = n, sd = sqrt(var)))
+}
+
+# Prepare recording function
+data_rec <- function(datafile, colonies, year) {
+  queens = mergePops(getQueen(colonies))
+  location = getLocation(colonies, collapse = TRUE)
+  datafile = rbind(datafile,
+                   data.frame(colonies             = deparse(substitute(colonies)),
+                              year                 = year,
+                              colonyID             = getId(colonies),
+                              queenID              = getCasteId(age1, caste = "queen", collapse = TRUE),
+                              locationX            = location[,1],
+                              locationY            = location[,2],
+                              nFathers             = nFathers(queens),
+                              nDPQ                 = sapply(getFathers(queens), function(x) length(unique(x@mother))),
+                              nCsdAlColony         = sapply(colonies@colonies, function(x) nCsdAlleles(x, collapse = TRUE)),
+                              nCsdApiary           = rep(nCsdAlleles(colonies, collapse = TRUE), queens@nInd),
+                              pHomBrood            = calcQueensPHomBrood(queens),
+                              gvQueens_QueenTrait  = sapply(getGv(colonies, caste = "queen"), function(x) x[1,1])
+                   ))}
+
+pheno_rec <- function(phenofile, colonies, year, locDF, trait = 1, beekeepers, yearEff, resVar) {
+  phenofile <- rbind(phenofile,
+                     computeSpatialPheno(colonies = colonies,
+                                         locDF = locDF,
+                                         trait = trait,
+                                         beekeepers = beekeepers,
+                                         yearEff = yearEff, resVar = resVar) %>%  dplyr::mutate(Year = year))
+}
+
 # Locations - x, y, and the beekeper
 locAll <- read.csv("Data/SLOLocations_standardised.csv")
 print(paste0("Number of all locations is ", nrow(locAll)))
@@ -119,8 +183,7 @@ nColoniesPerLocation <- 5 #In reality, it's 15
 #ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point() + geom_hline(aes(yintercept = 75000, col = "red"))+ geom_hline(aes(yintercept = 74700, col = "red"))
 
 # Sample locations for testing from one region - so they are close together - but have 5 colonies at each location
-loc <- locAll[(locAll$X_COORDINATE < xLim) & (locAll$Y_COORDINATE < yLim), ]
-loc <- locAll[(locAll$Y_COORDINATE < 75000) & (locAll$Y_COORDINATE > 74700), ]
+loc <- locAll[(locAll$X_COORDINATE > xMin) & (locAll$X_COORDINATE < xMax) & (locAll$Y_COORDINATE > yMin)& (locAll$Y_COORDINATE < yMax) ,]
 loc <- loc[!is.na(loc$Beekeeper),]
 
 print(paste0("Number of locations is ", nrow(loc)))
@@ -140,7 +203,7 @@ nQtlPerChr = 100                                          # Number of QTLs per c
 
 # Population parameters -------------------------------------------------------------------
 nRep <- 1                     # Number of repeats
-nYear <- 10                   # Number of years
+nYear <- 20                   # Number of years
 popSize <- 20000              # Number of queen colonies
 noWorkers <- 10                # Number of workers in a full colony
 noDrones <- 1                  # Number of drones in a full colony (typically nWorkers * 0.2 (not in the example))
@@ -165,12 +228,15 @@ p3collapseAge0 <- 0.25      # Percentage of age 0 colonies that collapse in peri
 p3collapseAge1 <- 0.3       # Percentage of age 2 colonies that collapse in period 3
 
 # Trait parameters - this is for honey yield based on Slovenian data from 2022
+h2 <- 0.25
 mean <- 20
 phenoVar <- 175
-h2 <- 0.25 # Heritability for honey yield
 varA <- phenoVar * h2
 nonAVar <- phenoVar - varA
-apiaryYearVar <- 1/3 * nonAVar
+beekeeperYearVar <- 1/3 * nonAVar
+beekeeperVar <- 1/3 * beekeeperYearVar
+yearVar <- 1/3 * beekeeperYearVar
+beekeeperYearVar <- 1/3 * beekeeperYearVar
 spatialVar <- 1/3 * nonAVar
 residualVar <- 1/3 * nonAVar
 
@@ -185,32 +251,49 @@ loopTime <- data.frame(Rep = NA, tic = NA, toc = NA, msg = NA, time = NA)
 functionsTime <- data.frame(Function = NA, Rep = NA, Year = NA, Period = NA, nColonies = NA, Time = NA)
 write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
-# Prepare recording function
-data_rec <- function(datafile, colonies, year) {
-  queens = mergePops(getQueen(colonies))
-  location = getLocation(colonies, collapse = TRUE)
-  datafile = rbind(datafile,
-                   data.frame(colonies             = deparse(substitute(colonies)),
-                              year                 = year,
-                              Id                   = queens@id,
-                              MId                  = queens@mother,
-                              FId                  = queens@father,
-                              locationX            = location[,1],
-                              locationY            = location[,2],
-                              nFathers             = nFathers(queens),
-                              nDPQ                 = sapply(getFathers(queens), function(x) length(unique(x@mother))),
-                              nCsdAlColony         = sapply(colonies@colonies, function(x) nCsdAlleles(x, collapse = TRUE)),
-                              nCsdApiary           = rep(nCsdAlleles(colonies, collapse = TRUE), queens@nInd),
-                              pHomBrood            = calcQueensPHomBrood(queens),
-                              gvQueens_QueenTrait  = sapply(getGv(colonies, caste = "queen"), function(x) x[1,1])
-                   ))}
-
 # Start of the rep-loop ---------------------------------------------------------------------
 for (Rep in 1:nRep) {
   colonyRecords = NULL
+  phenoRecords <- NULL
   # Rep <- 1 (you can use this to check if your code is running alright for one whole loop)
   cat(paste0("Rep: ", Rep, "/", nRep, "\n"))
   tic(paste0(nYear, 'y loop'))         # Measure cpu time
+
+
+  # Simulate the spatial effects ---------------------------------------------------------
+  # Create a mesh
+  bound.outer = max.edge = diff(range(loc$X_COORDINATE))#/3 #This is range
+  mesh = inla.mesh.2d(loc=cbind(loc$X_COORDINATE, loc$Y_COORDINATE),
+                      max.edge = c(1,5)*max.edge,
+                      # - use 5 times max.edge in the outer extension/offset/boundary
+                      cutoff = max.edge/5,
+                      offset = c(max.edge, bound.outer))
+  # Set up parameters (we don't know what a true range is!)
+  sigma.u = sqrt(spatialVar)
+  range = bound.outer
+  kappa = sqrt(8)/range
+  inla.seed = sample.int(n=1E6, size=1)
+
+  # Simulate spatial field (priors are not used for simulation, so just plugging in 0.5)
+  spde = inla.spde2.pcmatern(mesh, prior.range = c(.5, .5), prior.sigma = c(.5, .5))
+  Qu = inla.spde.precision(spde, theta=c(log(range), log(sigma.u)))
+  u = inla.qsample(n=1, Q=Qu, seed = inla.seed)
+  u = u[ ,1] #Spatial effects
+
+  # Obtain spatial effect for the locations
+  A = inla.spde.make.A(mesh=mesh, loc=as.matrix(loc[,c("X_COORDINATE", "Y_COORDINATE")]))
+  u = drop(A %*% u)
+
+  # Add to the location table
+  loc$SpatialEffect <- u
+  write.csv(loc, paste0("SpatialEffect_", rep, ".csv"), quote=FALSE, row.names=FALSE)
+
+  # Sample the beekeeper effect
+  beekeepersID <- unique(loc$Beekeeper)
+  beekeeperEffect <- sampleEffect(n = length(beekeepersID), var = beekeeperVar)
+  beekeepers <- data.frame(Beekeeper = beekeepersID,
+                           BeekeeperEffect = beekeeperEffect)
+
 
   # Founder population ---------------------------------------------------------
   # Using simulateHoneyBeeGenomes is a great way to get a basic founder gene pool
@@ -220,14 +303,10 @@ for (Rep in 1:nRep) {
   #                                           nSegSites = nSegSites)
   #
   # save(founderGenomes, file="founderGenomes_ThreePop.RData")
-
   # Or you can load your previously made founder population
   # print("Loading in the founderData")
   # load("FounderGenomes_ThreePop_16chr.RData")
   # load("~/Desktop/GitHub/lstrachan_honeybee_sim/YearCycleSimulation/PlottingData/FounderGenomes_ThreePop_16chr.RData")
-
-
-
   # STEP 2: Create SP object and write in the global simulation/population parameters
   print("Simulate the founders")
   founderGenomes <- quickHaplo(nInd = nFounders, nChr = nChr, segSites = nSegSites)
@@ -327,14 +406,14 @@ for (Rep in 1:nRep) {
       write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
 
-      print("Record initial colonies")
-      start = Sys.time()
-      colonyRecords <- data_rec(datafile = colonyRecords, colonies = age1, year = year)
-      end = Sys.time()
-      print("Done recording")
-      functionsTime <- rbind(functionsTime,
-                             c(Function = "RecordInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
-      write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+      # print("Record initial colonies") - I am not doing this, if I do, I have the same colonies recorded twice in year 1
+      # start = Sys.time()
+      # colonyRecords <- data_rec(datafile = colonyRecords, colonies = age1, year = year)
+      # end = Sys.time()
+      # print("Done recording")
+      # functionsTime <- rbind(functionsTime,
+      #                        c(Function = "RecordInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
+      # write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
       # Compute the relationship matrix
       print("Computing GRM")
@@ -388,7 +467,7 @@ for (Rep in 1:nRep) {
     # Split all age1 colonies
     print("Splitting the colonies")
     start = Sys.time()
-    tmp <- split(age1)
+    tmp <- SIMplyBee::split(age1)
     end = Sys.time()
     functionsTime <- rbind(functionsTime,
                            c(Function = "Split", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
@@ -533,6 +612,7 @@ for (Rep in 1:nRep) {
                       spatial = spatialMating,
                       radius = matingRange,
                       checkCross = "warning")
+      # Potentially, we need to kill the colonies that didn't mate successfully
       end = Sys.time()
       functionsTime <- rbind(functionsTime,
                              c(Function = "Cross", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age0p1), Time = difftime(end, start, units = "secs")))
@@ -661,7 +741,22 @@ for (Rep in 1:nRep) {
 
     # Merge all age 0 colonies (from both periods)
     age0 <- c(age0p1, age0p2)
-    colonyRecords <-data_rec(datafile = colonyRecords, colonies = age0, year = year)
+    # Record colonies and gvs
+    colonyRecords <- data_rec(datafile = colonyRecords, colonies = age0, year = year)
+    # Records phenotypes
+    yearEff <- sampleEffect(n = 1, var = yearVar)
+    beekeepers$BeekeeperYearEffect <- sampleEffect(n = length(beekeepersID), var = beekeeperYearVar)
+    phenoRecords <- pheno_rec(phenofile = phenoRecords, colonies = age0, year = year,
+                              locDF = loc, trait = 1, beekeepers = beekeepers, yearEff = yearEff,
+                              resVar = residualVar)
+    phenoRecords <- pheno_rec(phenofile = phenoRecords, colonies = age1, year = year,
+                              locDF = loc, trait = 1, beekeepers = beekeepers, yearEff = yearEff,
+                              resVar = residualVar)
+    if (year > 1) {
+      phenoRecords <- pheno_rec(phenofile = phenoRecords, colonies = age2, year = year,
+                                locDF = loc, trait = 1, beekeepers = beekeepers, yearEff = yearEff,
+                                resVar = residualVar)
+    }
 
     # Compute the relationship matrix
     print("Computing GRM")
@@ -710,7 +805,10 @@ for (Rep in 1:nRep) {
   a <- toc()
   loopTime <- rbind(loopTime, c(Rep, a$tic, a$toc, a$msg, (a$toc - a$tic)))
   write.csv(colonyRecords, paste0("ColonyRecords_", Rep, ".csv"), quote=F, row.names=F)
+  write.csv(phenoRecords, paste0("PhenoRecords_", Rep, ".csv"), quote=F, row.names=F)
+
 } # Rep-loop
+
 
 print("Saving image data")
 save.image(paste0("SloSpatialSimulation_", Rep, ".RData"))

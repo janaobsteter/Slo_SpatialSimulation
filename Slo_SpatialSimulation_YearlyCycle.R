@@ -93,10 +93,12 @@ getBeekeepersColoniesID <- function(multicolony, beekeeper, size = NULL) {
 locAll <- read.csv("Data/SLOLocations_standardised.csv")
 nColoniesPerLocation <- 5 #In reality, it's 15
 locAll$Beekeeper <- as.factor(locAll$Beekeeper)
-ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point()
+ggplot(data = locAll, aes(x = X_COORDINATE, Y_COORDINATE)) + geom_point() + geom_hline(aes(yintercept = 52000, col = "red")) +
+    geom_vline(aes(xintercept = 22000, col = "red"))
 
 # Sample locations for testing from one region - so they are close together - but have 5 colonies at each location
 loc <- locAll[locAll$X_COORDINATE < 15000 & locAll$Y_COORDINATE < 25000 ,]
+loc <- locAll[(locAll$X_COORDINATE > 115000) & (locAll$X_COORDINATE < 125000) & (locAll$Y_COORDINATE > 5000)& (locAll$Y_COORDINATE < 30000) ,]
 loc <- loc[!is.na(loc$Beekeeper),]
 nrow(loc)
 locList <- rep(Map(c, loc$X_COORDINATE, loc$Y_COORDINATE), nColoniesPerLocation)

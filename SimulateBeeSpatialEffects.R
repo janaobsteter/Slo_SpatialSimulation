@@ -16,36 +16,36 @@ local.plot.field = function(field, mesh, xlim=c(0,10), ylim=c(0,10), ...){
 
 
 # Read in SLO locations
-hivesSLO <- read.csv("~/Documents/1Projects/SIMplyBee_devel/Spatial/Data/Locations_cebele_KIS_130123.csv")
-locSLO <- unique(hivesSLO[, c("X_COORDINATE", "Y_COORDINATE", "KMG_MID")])
-colnames(locSLO) <- c("Y_COORDINATE", "X_COORDINATE", "Beekeeper") #Change x and y! They are the other way around for some reason
-locSLO[(is.na(locSLO$Y_COORDINATE)),]
-locSLO <- locSLO[!is.na(locSLO$Y_COORDINATE),]
-sum(is.na(locSLO$X_COORDINATE)); sum(is.na(locSLO$Y_COORDINATE))
+df <- read.csv("~/Documents/1Projects/SIMplyBee_devel/Spatial/Data/SLOLocations_standardised.csv")
+# locSLO <- unique(hivesSLO[, c("X_COORDINATE", "Y_COORDINATE", "KMG_MID")])
+# colnames(locSLO) <- c("Y_COORDINATE", "X_COORDINATE", "Beekeeper") #Change x and y! They are the other way around for some reason
+# locSLO[(is.na(locSLO$Y_COORDINATE)),]
+# locSLO <- locSLO[!is.na(locSLO$Y_COORDINATE),]
+# sum(is.na(locSLO$X_COORDINATE)); sum(is.na(locSLO$Y_COORDINATE))
 
 
 # Inspect points
-hist(locSLO$X_COORDINATE)
-hist(locSLO$Y_COORDINATE)
-CDF <- ecdf(locSLO$X_COORDINATE)
-plot(CDF)
-quantile(locSLO$X_COORDINATE, c(seq(0, 1, 0.05)))
-quantile(locSLO$Y_COORDINATE, c(seq(0, 1, 0.05)))
-
-# New df
-# Boundaries:
-xmin = 194661.55
-xmax = 625999.74
-ymin = 31118.3
-ymax = 373217.65
-df <- locSLO[locSLO$X_COORDINATE > xmin & locSLO$X_COORDINATE < xmax,]
-df <- df[df$Y_COORDINATE > ymin & df$Y_COORDINATE < ymax,]
-# Standardise
-xminData <- min(df$X_COORDINATE)
-yminData <- min(df$Y_COORDINATE)
-df$X_COORDINATE <- df$X_COORDINATE - xminData
-df$Y_COORDINATE <- df$Y_COORDINATE - yminData
-write.csv(df[, c("X_COORDINATE", "Y_COORDINATE", "Beekeeper")], "~/Documents/1Projects/SIMplyBee_devel/Spatial/SLOLocations_standardised.csv", quote=F, row.names=F)
+# hist(locSLO$X_COORDINATE)
+# hist(locSLO$Y_COORDINATE)
+# CDF <- ecdf(locSLO$X_COORDINATE)
+# plot(CDF)
+# quantile(locSLO$X_COORDINATE, c(seq(0, 1, 0.05)))
+# quantile(locSLO$Y_COORDINATE, c(seq(0, 1, 0.05)))
+#
+# # New df
+# # Boundaries:
+# xmin = 194661.55
+# xmax = 625999.74
+# ymin = 31118.3
+# ymax = 373217.65
+# df <- locSLO[locSLO$X_COORDINATE > xmin & locSLO$X_COORDINATE < xmax,]
+# df <- df[df$Y_COORDINATE > ymin & df$Y_COORDINATE < ymax,]
+# # Standardise
+# xminData <- min(df$X_COORDINATE)
+# yminData <- min(df$Y_COORDINATE)
+# df$X_COORDINATE <- df$X_COORDINATE - xminData
+# df$Y_COORDINATE <- df$Y_COORDINATE - yminData
+# write.csv(df[, c("X_COORDINATE", "Y_COORDINATE", "Beekeeper")], "~/Documents/1Projects/SIMplyBee_devel/Spatial/SLOLocations_standardised.csv", quote=F, row.names=F)
 
 #Plot by scatter plot
 plot(x = df$X_COORDINATE, y = df$Y_COORDINATE)
@@ -60,6 +60,7 @@ hist(df$Y_COORDINATE)
 summary(df)
 
 #1st attempt
+range = diff(range(df$X_COORDINATE, na.rm=T))/3
 max.edge = diff(range(df$X_COORDINATE, na.rm=T))/15
 #max.edge = 0.95
 max.edge
@@ -70,8 +71,7 @@ mesh1 = inla.mesh.2d(loc=cbind(df$X_COORDINATE,
 plot(mesh1, main="1st attempt"); points(df$X_COORDINATE, df$Y_COORDINATE, col="blue")
 
 #2nd attempt, with cutoff
-bound.outer = diff(range(df$X_COORDINATE))/3
-bound.outer
+bound.outer = range
 mesh2 = inla.mesh.2d(loc=cbind(df$X_COORDINATE, df$Y_COORDINATE),
                      max.edge = c(1,5)*max.edge,
                      # - use 5 times max.edge in the outer extension/offset/boundary
@@ -81,7 +81,6 @@ plot(mesh2, main="2nd attempt"); points(df$X_COORDINATE, df$Y_COORDINATE, col="b
 
 # Set up parameters (we don't know what a true range is!)
 sigma.u = 15 # What should this number be? For now, is half of the sigmaE from Sreten's paper (var is 36, sigma is 6)
-range = 30000 #Average size of an administrative unit in Slovenia 90km2
 kappa = sqrt(8)/range
 inla.seed = 200 #sample.int(n=1E6, size=1)
 
@@ -108,4 +107,7 @@ quilt.plot(x=df$X_COORDINATE,y=df$Y_COORDINATE, z=u, nx=100, ny=100, #What is nx
            col = plasma(101), main="Field projected to data locations",
            zlim = range(u))
 
+# Write the spatial effects out
+df$Spatial <- u
+write.csv(df, "~/Documents/1Projects/SIMplyBee_devel/Spatial/Data/SpatialEffects_SLOLocations_standardised.csv", quote = F, row.names = F )
 
