@@ -13,7 +13,9 @@ noLoc <- 50
 rep <- 1
 nYear <- 20
 spatialMating <- ifelse(spatial, "Spatial", "Random")
+range <- 1
 dir = paste0(homeDir, spatialMating, "_NoLoc_", noLoc, "/")
+dir = paste0(homeDir, spatialMating, "_NoLoc_", noLoc, "_Range", range, "/")
 setwd(dir)
 
 colonyRecords <- read.csv(paste0("ColonyRecords_", rep, ".csv"))
@@ -24,7 +26,8 @@ for (Year in 1:nYear) {
   # Plot the full phenotype
   phenoRecords_year <- phenoRecords[phenoRecords$Year == Year,]
   pheno <- phenoRecords_year %>% select(colonyID, FullPheno)
-  location <- unique(colonyRecords %>%  select(colonyID, locationX, locationY) %>% filter(.$colonyID %in% pheno$colonyID))
+  location <- unique(colonyRecords %>%  select(colonyID, locationX, locationY) %>%
+                       filter(.$colonyID %in% pheno$colonyID))
 
   nrow(pheno); nrow(unique(location))
   sum(duplicated(pheno$colonyID)); sum(duplicated(location$colonyID))
@@ -48,13 +51,13 @@ system(paste0("convert -delay 100 -loop 0 ", paste0("PhenoVariogram", 1:nYear, "
 
 # Plot the spatial effect - just once for the simulation
 spatialLocation <- spatialEffects %>% select(X_COORDINATE, Y_COORDINATE, SpatialEffect)
-
 # Transform the dataframe into SpatialPointDataFrame
 coordinates(spatialLocation)=~X_COORDINATE+Y_COORDINATE
 class(spatialLocation)
-
 # Create a variogram
 Vario_SpatialEff <- variogram(SpatialEffect ~ 1,
                               data = spatialLocation)
 # Plot the variogram
-plot(Vario_SpatialEff)
+png("SpatialEffVariogram.png")
+print(plot(Vario_SpatialEff))
+dev.off()

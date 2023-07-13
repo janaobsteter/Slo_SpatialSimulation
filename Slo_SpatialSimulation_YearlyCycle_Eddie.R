@@ -152,10 +152,10 @@ data_rec <- function(datafile, colonies, year) {
   queens = mergePops(getQueen(colonies))
   location = getLocation(colonies, collapse = TRUE)
   datafile = rbind(datafile,
-                   data.frame(colonies             = deparse(substitute(colonies)),
-                              year                 = year,
+                   data.frame(colonies             = c(deparse(substitute(colonies))),
+                              year                 = c(year),
                               colonyID             = getId(colonies),
-                              queenID              = getCasteId(age1, caste = "queen", collapse = TRUE),
+                              queenID              = getCasteId(colonies, caste = "queen", collapse = TRUE),
                               locationX            = location[,1],
                               locationY            = location[,2],
                               nFathers             = nFathers(queens),
@@ -237,7 +237,7 @@ beekeeperYearVar <- 1/3 * nonAVar
 beekeeperVar <- 1/3 * beekeeperYearVar
 yearVar <- 1/3 * beekeeperYearVar
 beekeeperYearVar <- 1/3 * beekeeperYearVar
-spatialVar <- 1/3 * nonAVar
+spatialVar <- 3 * nonAVar
 residualVar <- 1/3 * nonAVar
 
 
@@ -286,7 +286,7 @@ for (Rep in 1:nRep) {
 
   # Add to the location table
   loc$SpatialEffect <- u
-  write.csv(loc, paste0("SpatialEffect_", rep, ".csv"), quote=FALSE, row.names=FALSE)
+  write.csv(loc, paste0("SpatialEffect_", Rep, ".csv"), quote=FALSE, row.names=FALSE)
 
   # Sample the beekeeper effect
   beekeepersID <- unique(loc$Beekeeper)
@@ -406,14 +406,14 @@ for (Rep in 1:nRep) {
       write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
 
-      # print("Record initial colonies") - I am not doing this, if I do, I have the same colonies recorded twice in year 1
-      # start = Sys.time()
-      # colonyRecords <- data_rec(datafile = colonyRecords, colonies = age1, year = year)
-      # end = Sys.time()
-      # print("Done recording")
-      # functionsTime <- rbind(functionsTime,
-      #                        c(Function = "RecordInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
-      # write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
+      print("Record initial colonies")
+      start = Sys.time()
+      colonyRecords <- data_rec(datafile = colonyRecords, colonies = age1, year = year)
+      end = Sys.time()
+      print("Done recording")
+      functionsTime <- rbind(functionsTime,
+                             c(Function = "RecordInitialColonies", Rep = Rep, Year = year, Period = "1", nColonies = nColonies(age1), Time = difftime(end, start, units = "secs")))
+      write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
       # Compute the relationship matrix
       print("Computing GRM")
@@ -430,15 +430,6 @@ for (Rep in 1:nRep) {
 
       # Save the Gmatrix
       save(Gmatrix, file = paste0("GRMInitial_", year, ".Rdata"))
-
-
-      # # Order by the X-location
-      # xOrderedId <- colonyRecords %>%  filter(Id %in% getId(getQueen(age1, collapse = TRUE))) %>%
-      #   select(Id, locationX) %>%  arrange(locationX) %>% select(Id)
-      # # Order the Gmatrix by X
-      # xMatch <- match(as.character(xOrderedId$Id), rownames(Gmatrix))
-      # xOrderedG <- Gmatrix[xMatch, xMatch]
-      #
 
       # If not, promote the age0 to age1, age1 to age2 and remove age2 colonies
     } else {
