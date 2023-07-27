@@ -11,11 +11,25 @@ library(AGHmatrix)
 library(tidyverse)
 library(INLA)
 
+xMin = 115000; xMax = 125000; yMin = 5000; yMax = 30000
+rangeProportionChar = "SLO"
+spatialVarProportionChar = "1/3"
+spatialInput = 1
+
 args = commandArgs(trailingOnly=TRUE)
 xLim = as.integer(args[1])
 yLim = as.integer(args[2])
-spatialInput = as.logical(as.integer(args[3]))
-#xMin = 115000; xMax = 125000; yMin = 5000; yMax = 30000
+rangeProportionChar = as.character(args[3]) # Either proportional to the area or  (meaning whole Slovenija)
+spatialVarProportionChar = as.character(args[4]) # Proportion of the varA
+if (nchar(spatialVarProportionChar) == 1) {
+  spatialVarProportion <- as.integer(spatialVarProportionChar)
+} else {
+  spatialVarProportion = as.integer(strsplit(spatialVarProportionChar, "/")[[1]][[1]]) /
+    as.integer(strsplit(spatialVarProportionChar, "/")[[1]][[2]])
+}
+spatialInput = as.logical(as.integer(args[5]))
+
+
 
 print("Xlimit")
 print(xLim)
@@ -114,15 +128,16 @@ reQueenWithBeekeepersDonor <- function(virginMultiColony, donorMultiColony) {
 }
 
 computeSpatialPheno <- function(colonies, locDF, trait = 1, beekeepers, yearEff, resVar) {
-  myMapCasteToColonyPheno <- function(colony) {
-    yield <- mapCasteToColonyPheno(colony,
-                                   queenTrait = trait,
-                                   queenFUN = function(x) x,
-                                   workersTrait = NULL,
-                                   checkProduction = TRUE)
+  myMapCasteToColonyGv <- function(colony) {
+    yield <- mapCasteToColonyGv(colony,
+                                queenTrait = trait,
+                                queenFUN = function(x) x,
+                                workersTrait = NULL,
+                                checkProduction = FALSE)
   }
   # Compute the phenotype of the colony
-  pheno <- data.frame(Pheno = calcColonyPheno(x = colonies, FUN = myMapCasteToColonyPheno)) %>%  dplyr::mutate(colonyID = rownames(.))
+  gv <- data.frame(Gv = calcColonyGv(x = colonies, FUN = myMapCasteToColonyGv)) %>%
+    dplyr::mutate(colonyID = rownames(.))
 
   # Get location and beekeeper of the colonies
   locMultiColony <- as.data.frame(getLocation(colonies, collapse = TRUE)) %>%
@@ -131,16 +146,16 @@ computeSpatialPheno <- function(colonies, locDF, trait = 1, beekeepers, yearEff,
   beekeeperMultiColony <- data.frame(Beekeeper = getBeekeeper(colonies)) %>%
     dplyr::mutate(colonyID = rownames(.))
 
-  phenoLoc <- list(pheno, locMultiColony, beekeeperMultiColony) %>%
+  gvLoc <- list(gv, locMultiColony, beekeeperMultiColony) %>%
     reduce(full_join, by = "colonyID") %>%
     dplyr::mutate(Beekeeper = as.integer(Beekeeper))
 
-  phenoLocSpatial <- list(phenoLoc, locDF) %>%
+  gvLocSpatial <- list(gvLoc, locDF) %>%
     reduce(left_join, by = c("X_COORDINATE", "Y_COORDINATE", "Beekeeper")) %>%
     list(., beekeepers) %>% reduce(left_join, by = "Beekeeper") %>%
     dplyr::mutate(Residual = sampleEffect(n = nrow(.), var = resVar)) %>%
-    dplyr::mutate(FullPheno = Pheno + BeekeeperEffect + c(yearEff) + BeekeeperYearEffect + SpatialEffect + Residual)
-  return(phenoLocSpatial %>% select(colonyID, FullPheno, Beekeeper, SpatialEffect, BeekeeperEffect))
+    dplyr::mutate(FullPheno = Gv + BeekeeperEffect + c(yearEff) + BeekeeperYearEffect + SpatialEffect + Residual)
+  return(gvLocSpatial) #%>% select(colonyID, Gv, FullPheno, Beekeeper, SpatialEffect, BeekeeperEffect))
 }
 
 sampleEffect = function(n, var) {
@@ -199,7 +214,7 @@ nFounders <- nFounderQueens + nFounderDPQ                 # How many founders al
 nChr = 1                                                  # Number of chromosomes
 nDronesPerQueen = 100                                     # Number of drones created per founder DPQ
 nSegSites = 2000                                          # Number of segregating sites per chromosome
-nQtlPerChr = 100                                          # Number of QTLs per chromosome
+nQtlPerChr = 2000                                          # Number of QTLs per chromosome
 
 # Population parameters -------------------------------------------------------------------
 nRep <- 1                     # Number of repeats
@@ -237,12 +252,13 @@ beekeeperYearVar <- 1/3 * nonAVar
 beekeeperVar <- 1/3 * beekeeperYearVar
 yearVar <- 1/3 * beekeeperYearVar
 beekeeperYearVar <- 1/3 * beekeeperYearVar
-spatialVar <- 3 * nonAVar
+spatialVar <- spatialVarProportion * nonAVar
 residualVar <- 1/3 * nonAVar
 
 
 # Create a directory
-dirName <- paste0(ifelse(spatialMating, "Spatial", "Random"), "_NoLoc_", nrow(loc))
+dirName <- paste0(ifelse(spatialMating, "Spatial", "Random"), "_NoLoc_", nrow(loc), "_SpVar_",
+                  gsub("/", "_", spatialVarProportionChar), "_Range_", gsub("/", "_", rangeProportionChar))
 dir.create(dirName)
 setwd(dirName)
 
@@ -262,12 +278,29 @@ for (Rep in 1:nRep) {
 
   # Simulate the spatial effects ---------------------------------------------------------
   # Create a mesh
-  bound.outer = max.edge = diff(range(loc$X_COORDINATE))#/3 #This is range
-  mesh = inla.mesh.2d(loc=cbind(loc$X_COORDINATE, loc$Y_COORDINATE),
-                      max.edge = c(1,5)*max.edge,
-                      # - use 5 times max.edge in the outer extension/offset/boundary
-                      cutoff = max.edge/5,
-                      offset = c(max.edge, bound.outer))
+  if (rangeProportionChar == "SLO") {
+    bound.outer = max.edge = diff(range(locAll$X_COORDINATE))/3 #This is range
+    mesh = inla.mesh.2d(loc=cbind(locAll$X_COORDINATE, locAll$Y_COORDINATE),
+                        max.edge = c(1,5)*max.edge,
+                        # - use 5 times max.edge in the outer extension/offset/boundary
+                        cutoff = max.edge/5,
+                        offset = c(max.edge, bound.outer))
+  } else {
+    tmp <- strsplit(rangeProportionChar, "/")[[1]]
+    if (length(tmp) == 1) {
+      rangeProportion = as.integer(rangeProportionChar)
+    } else {
+      rangeProportion = as.integer(tmp[[1]]) / as.integer(tmp[[2]])
+    }
+
+    bound.outer = max.edge = diff(range(loc$X_COORDINATE)) * rangeProportion
+    mesh = inla.mesh.2d(loc=cbind(loc$X_COORDINATE, loc$Y_COORDINATE),
+                        max.edge = c(1,5)*max.edge,
+                        # - use 5 times max.edge in the outer extension/offset/boundary
+                        cutoff = max.edge/5,
+                        offset = c(max.edge, bound.outer))
+  }
+
   # Set up parameters (we don't know what a true range is!)
   sigma.u = sqrt(spatialVar)
   range = bound.outer
@@ -281,11 +314,19 @@ for (Rep in 1:nRep) {
   u = u[ ,1] #Spatial effects
 
   # Obtain spatial effect for the locations
-  A = inla.spde.make.A(mesh=mesh, loc=as.matrix(loc[,c("X_COORDINATE", "Y_COORDINATE")]))
-  u = drop(A %*% u)
+  if (rangeProportionChar == "SLO") {
+    A = inla.spde.make.A(mesh=mesh, loc=as.matrix(locAll[,c("X_COORDINATE", "Y_COORDINATE")]))
+    u = drop(A %*% u)
+    locAll$SpatialEffect <- u
+    loc <- left_join(loc, locAll)
+  } else {
+    A = inla.spde.make.A(mesh=mesh, loc=as.matrix(loc[,c("X_COORDINATE", "Y_COORDINATE")]))
+    u = drop(A %*% u)
+    loc$SpatialEffect <- u
+  }
+
 
   # Add to the location table
-  loc$SpatialEffect <- u
   write.csv(loc, paste0("SpatialEffect_", Rep, ".csv"), quote=FALSE, row.names=FALSE)
 
   # Sample the beekeeper effect
@@ -320,7 +361,7 @@ for (Rep in 1:nRep) {
   SP$splitP <- 0.3
   SP$setTrackPed(TRUE)            # Track the pedigree
   SP$setTrackRec(TRUE)            # Track the recombination
-  SP$addSnpChip(nSnpPerChr = 1000)   # Add a SNP chip with 1000 SNPs per chromosome
+  #SP$addSnpChip(nSnpPerChr = 1000)   # Add a SNP chip with 1000 SNPs per chromosome
   csdChr <- SP$csdChr             # define csd chromomsome
 
   # Add trait - simulating only queen trait for now!
@@ -358,8 +399,10 @@ for (Rep in 1:nRep) {
   write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
   #Compute base AF
-  baseAF <- calcBeeAlleleFreq(x = getSnpGeno(queens),
+  baseAF <- calcBeeAlleleFreq(x = getQtlGeno(queens),
                               sex = queens@sex)
+  # baseAF <- calcBeeAlleleFreq(x = getSnpGeno(queens),
+  #                             sex = queens@sex)
 
 
   # Start the year-loop ------------------------------------------------------------------
@@ -418,7 +461,8 @@ for (Rep in 1:nRep) {
       # Compute the relationship matrix
       print("Computing GRM")
       start = Sys.time()
-      queenGeno <- getSnpGeno(getQueen(age1, collapse = TRUE))
+      queenGeno <- getQtlGeno(getQueen(age1, collapse = TRUE))
+      #queenGeno <- getSnpGeno(getQueen(age1, collapse = TRUE))
       Gmatrix <- calcBeeGRMIbs(x = queenGeno,
                                sex = rep("F", nColonies(age1)),
                                alleleFreq = baseAF)
@@ -429,7 +473,8 @@ for (Rep in 1:nRep) {
       write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
       # Save the Gmatrix
-      save(Gmatrix, file = paste0("GRMInitial_", year, ".Rdata"))
+      dir.create("RData")
+      save(Gmatrix, file = paste0("RData/GRMInitial_", year, ".Rdata"))
 
       # If not, promote the age0 to age1, age1 to age2 and remove age2 colonies
     } else {
@@ -752,7 +797,8 @@ for (Rep in 1:nRep) {
     # Compute the relationship matrix
     print("Computing GRM")
     start = Sys.time()
-    queenGeno <- getSnpGeno(getQueen(age0, collapse = TRUE))
+    #queenGeno <- getSnpGeno(getQueen(age0, collapse = TRUE))
+    queenGeno <- getQtlGeno(getQueen(age0, collapse = TRUE))
     Gmatrix <- calcBeeGRMIbs(x = queenGeno,
                              sex = rep("F", nColonies(age0)),
                              alleleFreq = baseAF)
@@ -763,7 +809,7 @@ for (Rep in 1:nRep) {
     write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
     # Save the Gmatrix
-    save(Gmatrix, file = paste0("GRMAge0_", year, ".Rdata"))
+    save(Gmatrix, file = paste0("RData/GRMAge0_", year, ".Rdata"))
 
     # Period3 ------------------------------------------------------------------
     # Collapse age0 queens
@@ -802,7 +848,7 @@ for (Rep in 1:nRep) {
 
 
 print("Saving image data")
-save.image(paste0("SloSpatialSimulation_", Rep, ".RData"))
+save.image(paste0("RData/SloSpatialSimulation_", Rep, ".RData"))
 
 #
 # # Plot alive colonies
