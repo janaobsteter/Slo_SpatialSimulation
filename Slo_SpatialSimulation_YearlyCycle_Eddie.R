@@ -12,15 +12,12 @@ library(tidyverse)
 library(INLA)
 
 args = commandArgs(trailingOnly=TRUE)
-xLim = as.integer(args[1])
-yLim = as.integer(args[2])
+xMin = as.integer(args[1])
+xMax = as.integer(args[2])
+yMin = as.integer(args[3])
+yMax = as.integer(args[4])
 spatialInput = as.logical(as.integer(args[3]))
 #xMin = 115000; xMax = 125000; yMin = 5000; yMax = 30000
-
-print("Xlimit")
-print(xLim)
-print("Ylimit")
-print(yLim)
 
 # Define functions
 maintainPopulationSize <- function(age0 = NULL, age1 = NULL, popSize = NULL) {
@@ -237,7 +234,7 @@ beekeeperYearVar <- 1/3 * nonAVar
 beekeeperVar <- 1/3 * beekeeperYearVar
 yearVar <- 1/3 * beekeeperYearVar
 beekeeperYearVar <- 1/3 * beekeeperYearVar
-spatialVar <- 3 * nonAVar
+spatialVar <- 1/3 * nonAVar
 residualVar <- 1/3 * nonAVar
 
 
@@ -262,10 +259,11 @@ for (Rep in 1:nRep) {
 
   # Simulate the spatial effects ---------------------------------------------------------
   # Create a mesh
-  bound.outer = max.edge = diff(range(loc$X_COORDINATE))#/3 #This is range
+  range = bound.outer = diff(range(loc$X_COORDINATE))/3
+  max.edge = range / 5
   mesh = inla.mesh.2d(loc=cbind(loc$X_COORDINATE, loc$Y_COORDINATE),
-                      max.edge = c(1,5)*max.edge,
-                      # - use 5 times max.edge in the outer extension/offset/boundary
+                      max.edge = c(1,2)*max.edge,
+                      # - use 2 times max.edge in the outer extension/offset/boundary
                       cutoff = max.edge/5,
                       offset = c(max.edge, bound.outer))
   # Set up parameters (we don't know what a true range is!)
