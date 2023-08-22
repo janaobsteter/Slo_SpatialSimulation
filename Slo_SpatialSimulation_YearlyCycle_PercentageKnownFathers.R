@@ -1,5 +1,5 @@
 # Set the working directory
-#setwd("~/Documents/1Projects/SIMplyBee_devel/Spatial/")
+#setwd("~/Nextcloud/Documents/1Projects/Spatial/")
 # Load packages
 library(SIMplyBee)
 library(tictoc)
@@ -14,7 +14,7 @@ library(INLA)
 xMin = 115000; xMax = 125000; yMin = 5000; yMax = 30000
 rangeProportionChar = "SLO"
 spatialVarProportionChar = "1/3"
-spatialInput = 1
+#spatialInput = 1
 proportionKnownFathers <- 0.5
 
 args = commandArgs(trailingOnly=TRUE)
@@ -30,7 +30,7 @@ if (nchar(spatialVarProportionChar) == 1) {
   spatialVarProportion = as.integer(strsplit(spatialVarProportionChar, "/")[[1]][[1]]) /
     as.integer(strsplit(spatialVarProportionChar, "/")[[1]][[2]])
 }
-spatialInput = as.logical(as.integer(args[7]))
+#spatialInput = as.logical(as.integer(args[7]))
 
 
 
@@ -223,7 +223,7 @@ noWorkers <- 10                # Number of workers in a full colony
 noDrones <- 1                  # Number of drones in a full colony (typically nWorkers * 0.2 (not in the example))
 noFathers <- nFathersPoisson   # Number of drones the queen mates with (could also be a function)
 noVirginQueens <- 1            # Number of created virgin queens
-spatialMating <- spatialInput  # Whether to implement random (FALSE) or spatial (TRUE) mating
+#spatialMating <- spatialInput  # Whether to implement random (FALSE) or spatial (TRUE) mating
 matingRange <- 5000            # Range of mating in metres!
 
 # Period parameters -------------------------------------------------------------------
@@ -258,7 +258,7 @@ residualVar <- 1/3 * nonAVar
 for (proportionKnown in c(0.1, 0.3, 0.5, 0.8, 1)) {
   # Create a directory
   dirName <- paste0("~/Documents/1Projects/SIMplyBee_devel/Spatial/",
-                    ifelse(spatialMating, "Spatial", "Random"), "_NoLoc_", nrow(loc), "_SpVar_",
+                    "MatingStation", "_NoLoc_", nrow(loc), "_SpVar_",
                     gsub("/", "_", spatialVarProportionChar), "_Range_", gsub("/", "_", rangeProportionChar),
                     "_ProportionKnownFathers", proportionKnown)
   dir.create(dirName)
@@ -643,15 +643,27 @@ for (proportionKnown in c(0.1, 0.3, 0.5, 0.8, 1)) {
         # ggplot(data = locations, aes(x = x, y = y, colour = Colonies, size = Colonies)) +
         #   geom_point()
         age1start = Sys.time()
-        tmp <- pullColonies(age0p1, p = proportionKnown)
-        age0p1_spatialMating <- tmp$remnant
-        age0p1_matingStation <- tmp$pulled
+        myMapCasteToColonyGv <- function(colony) {
+          yield <- mapCasteToColonyGv(colony,
+                                      queenTrait = 1,
+                                      queenFUN = function(x) x,
+                                      workersTrait = NULL,
+                                      checkProduction = FALSE)
+        }
+        matingStationColony <- selectColonies(age1, n = 1, by = calcColonyGv(age1, FUN = myMapCasteToColonyGv), selectTop = TRUE)
+        otherColonies <- selectColonies(age1, n = nColonies(age1) - 1, by = calcColonyGv(age1, FUN = myMapCasteToColonyGv), selectTop = FALSE)
+        dronesNeeded <- nColonies(age0p1) * 50
+        dronesFromKnown <- dronesNeeded * proportionKnown
+        dronesFromOther <- round((dronesNeeded - dronesFromKnown)  / nColonies(otherColonies))
+
+        DCA <- mergePops(c(createDrones(x = matingStationColony, nInd = dronesFromKnown),
+                         createDrones(x = otherColonies, nInd = dronesFromOther)))
+
         age0p1 <- cross(x = age0p1,
-                        droneColonies = age1,
+                        drones = DCA,
                         nDrones = nFathersPoisson,
                         crossPlan = "create",
-                        spatial = spatialMating,
-                        radius = matingRange,
+                        spatial = FALSE,
                         checkCross = "warning")
         # Potentially, we need to kill the colonies that didn't mate successfully
         end = Sys.time()
@@ -660,12 +672,20 @@ for (proportionKnown in c(0.1, 0.3, 0.5, 0.8, 1)) {
         write.csv(functionsTime, "FunctionsTime.csv", quote = F, row.names = F)
 
       } else {
-        age0p1 <- cross(age0p1,
-                        droneColonies = c(age1, age2),
+
+        matingStationColony <- selectColonies(c(age1, age2), n = 1, by = calcColonyGv(c(age1, age2), FUN = myMapCasteToColonyGv), selectTop = TRUE)
+        otherColonies <- selectColonies(c(age1, age2), n = nColonies(c(age1, age2)) - 1, by = calcColonyGv(c(age1, age2), FUN = myMapCasteToColonyGv), selectTop = FALSE)
+        dronesNeeded <- nColonies(age0p1) * 50
+        dronesFromKnown <- dronesNeeded * proportionKnown
+        dronesFromOther <- round((dronesNeeded - dronesFromKnown)  / nColonies(otherColonies))
+
+        DCA <- mergePops(c(createDrones(x = matingStationColony, nInd = dronesFromKnown),
+                           createDrones(x = otherColonies, nInd = dronesFromOther)))
+        age0p1 <- cross(x = age0p1,
+                        drones = DCA,
                         nDrones = nFathersPoisson,
                         crossPlan = "create",
-                        spatial = spatialMating,
-                        radius = matingRange,
+                        spatial = FALSE,
                         checkCross = "warning")
       }
 
