@@ -21,17 +21,15 @@ xMin = as.integer(args[1])
 xMax = as.integer(args[2])
 yMin = as.integer(args[3])
 yMax = as.integer(args[4])
-spatialInput = as.logical(as.integer(args[3]))
-#xMin = 115000; xMax = 125000; yMin = 5000; yMax = 30000
-rangeProportionChar = as.character(args[3]) # Either proportional to the area or  (meaning whole Slovenija)
-spatialVarProportionChar = as.character(args[4]) # Proportion of the varA
+rangeProportionChar = as.character(args[5]) # Either proportional to the area or  (meaning whole Slovenija)
+spatialVarProportionChar = as.character(args[6]) # Proportion of the varA
 if (nchar(spatialVarProportionChar) == 1) {
   spatialVarProportion <- as.integer(spatialVarProportionChar)
 } else {
   spatialVarProportion = as.integer(strsplit(spatialVarProportionChar, "/")[[1]][[1]]) /
     as.integer(strsplit(spatialVarProportionChar, "/")[[1]][[2]])
 }
-spatialInput = as.logical(as.integer(args[5]))
+spatialInput = as.logical(as.integer(args[7]))
 
 
 # Define functions
